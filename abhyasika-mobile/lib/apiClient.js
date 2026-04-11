@@ -1,6 +1,7 @@
 import { clearStoredSession, getStoredSession } from "./sessionStorage.js";
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://10.0.2.2:4000/api";
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://10.0.2.2:4000/api";
 
 async function request(path, { method = "GET", body, auth = true } = {}) {
   const session = await getStoredSession();
@@ -23,11 +24,24 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
     if (response.status === 401) {
       await clearStoredSession();
     }
-    throw new Error(payload?.error?.message ?? payload?.message ?? "Request failed");
+    throw new Error(
+      payload?.error?.message ?? payload?.message ?? "Request failed"
+    );
   }
 
   return payload?.data;
 }
+
+const withParams = (path, params) => {
+  const query = new URLSearchParams();
+  Object.entries(params ?? {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      query.set(key, String(value));
+    }
+  });
+  const suffix = query.toString();
+  return suffix ? `${path}?${suffix}` : path;
+};
 
 export function createApiClient() {
   return {
@@ -49,27 +63,215 @@ export function createApiClient() {
       return request("/admin/roles");
     },
 
+    async createRole(payload) {
+      return request("/admin/roles", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
+    async deleteRole(id, audit) {
+      return request(`/admin/roles/${id}`, {
+        method: "DELETE",
+        body: audit ? { audit } : undefined,
+      });
+    },
+
+    async createTeamMember(payload) {
+      return request("/admin/team-members/manual", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
+    async inviteTeamMember(payload) {
+      return request("/admin/team-members/invite", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
+    async listPlans() {
+      return request("/plans");
+    },
+
+    async createPlan(payload) {
+      return request("/plans", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
+    async updatePlan(id, updates) {
+      return request(`/plans/${id}`, {
+        method: "PUT",
+        body: updates,
+      });
+    },
+
+    async deletePlan(id, audit) {
+      return request(`/plans/${id}`, {
+        method: "DELETE",
+        body: audit ? { audit } : undefined,
+      });
+    },
+
     async listStudents(filters = {}) {
-      const params = new URLSearchParams();
-      if (filters.search) params.set("search", filters.search);
-      if (typeof filters.isActive === "boolean") {
-        params.set("is_active", String(filters.isActive));
-      }
-      const suffix = params.toString() ? `?${params.toString()}` : "";
-      return request(`/students${suffix}`);
+      return request(
+        withParams("/students", {
+          search: filters.search,
+          is_active:
+            typeof filters.isActive === "boolean" ? filters.isActive : undefined,
+        })
+      );
+    },
+
+    async createStudent(payload) {
+      return request("/students", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
+    async updateStudent(id, updates) {
+      return request(`/students/${id}`, {
+        method: "PUT",
+        body: updates,
+      });
+    },
+
+    async toggleStudentActive(id, audit) {
+      return request(`/students/${id}/toggle-active`, {
+        method: "PATCH",
+        body: audit ? { audit } : undefined,
+      });
+    },
+
+    async getStudentHistory(id) {
+      return request(`/students/${id}/history`);
     },
 
     async listSeats() {
       return request("/seats");
     },
 
+    async createSeat(payload) {
+      return request("/seats", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
+    async assignSeat(payload) {
+      return request(`/seats/${payload.seatId}/assign`, {
+        method: "POST",
+        body: {
+          studentId: payload.studentId,
+          audit: payload.audit,
+        },
+      });
+    },
+
+    async deallocateSeat(payload) {
+      const seatId = payload?.seatId ?? payload;
+      return request(`/seats/${seatId}/deallocate`, {
+        method: "POST",
+        body: payload?.audit ? { audit: payload.audit } : undefined,
+      });
+    },
+
     async listPayments(filters = {}) {
-      const params = new URLSearchParams();
-      if (filters.limit) params.set("limit", String(filters.limit));
-      if (filters.startDate) params.set("startDate", filters.startDate);
-      if (filters.endDate) params.set("endDate", filters.endDate);
-      const suffix = params.toString() ? `?${params.toString()}` : "";
-      return request(`/payments${suffix}`);
+      return request(
+        withParams("/payments", {
+          limit: filters.limit,
+          startDate: filters.startDate,
+          endDate: filters.endDate,
+        })
+      );
+    },
+
+    async createPayment(payload) {
+      return request("/payments", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
+    async listExpenses() {
+      return request("/expenses");
+    },
+
+    async createExpense(payload) {
+      return request("/expenses", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
+    async listExpenseCategories() {
+      return request("/expenses/categories");
+    },
+
+    async createExpenseCategory(payload) {
+      return request("/expenses/categories", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
+    async deleteExpenseCategory(id, audit) {
+      return request(`/expenses/categories/${id}`, {
+        method: "DELETE",
+        body: audit ? { audit } : undefined,
+      });
+    },
+
+    async getSettings() {
+      return request("/settings");
+    },
+
+    async updateSettings(preferences) {
+      return request("/settings", {
+        method: "PUT",
+        body: { preferences },
+      });
+    },
+
+    async listHistory({ objectType, limit } = {}) {
+      return request(
+        withParams("/history", {
+          object_type: objectType,
+          limit,
+        })
+      );
+    },
+
+    async importStudents(rows, audit) {
+      return request("/students/import", {
+        method: "POST",
+        body: { rows, audit },
+      });
+    },
+
+    async importPayments(rows, audit) {
+      return request("/payments/import", {
+        method: "POST",
+        body: { rows, audit },
+      });
+    },
+
+    async importExpenses(rows, audit) {
+      return request("/expenses/import", {
+        method: "POST",
+        body: { rows, audit },
+      });
+    },
+
+    async recordImportLog(entry) {
+      return request("/imports/logs", {
+        method: "POST",
+        body: entry,
+      });
     },
   };
 }
