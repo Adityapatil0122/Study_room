@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import LucideIcon from "../components/icons/LucideIcon.jsx";
-import { supabase } from "../lib/supabaseBrowser.js";
+import { createApiClient } from "../lib/apiClient.js";
 
 const OBJECT_LABELS = {
   students: "Students",
@@ -12,6 +12,7 @@ const OBJECT_LABELS = {
 };
 
 function HistoryView() {
+  const api = useMemo(() => createApiClient(), []);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -25,17 +26,17 @@ function HistoryView() {
     async function load() {
       setLoading(true);
       setError("");
-      let query = supabase.from("audit_log").select("*").order("created_at", { ascending: false }).limit(200);
-      if (filters.object_type !== "all") {
-        query = query.eq("object_type", filters.object_type);
-      }
-      const { data, error } = await query;
-      if (!active) return;
-      if (error) {
+      try {
+        const data = await api.listHistory({
+          objectType: filters.object_type !== "all" ? filters.object_type : undefined,
+          limit: 200,
+        });
+        if (!active) return;
+        setEntries(data ?? []);
+      } catch (error) {
+        if (!active) return;
         setError(error.message ?? "Failed to fetch history.");
         setEntries([]);
-      } else {
-        setEntries(data ?? []);
       }
       setLoading(false);
     }
@@ -43,7 +44,7 @@ function HistoryView() {
     return () => {
       active = false;
     };
-  }, [filters.object_type]);
+  }, [api, filters.object_type]);
 
   const filtered = useMemo(() => {
     if (!filters.search.trim()) return entries;

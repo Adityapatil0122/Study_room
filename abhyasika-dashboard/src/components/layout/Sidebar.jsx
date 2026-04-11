@@ -5,9 +5,7 @@ import { VIEW_DEFINITIONS } from "../../constants/views.js";
 function Sidebar({
   activeView,
   onNavigate,
-  admin,
   branding = { logoUrl: "/images/abhyasika-logo.png" },
-  onLogout = () => {},
   allowedViews = [],
 }) {
   const allowedList =

@@ -20,8 +20,7 @@ import LucideIcon from "./components/icons/LucideIcon.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
 import LoginView from "./views/LoginView.jsx";
 import { createApiClient } from "./lib/apiClient.js";
-import { VIEW_LABELS, ALL_VIEW_IDS } from "./constants/views.js";
-import { supabase } from "./lib/supabaseBrowser.js";
+import { ALL_VIEW_IDS } from "./constants/views.js";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
@@ -56,6 +55,16 @@ const MODAL_PERMISSIONS = {
   logPayment: { view: "payments", action: "add" },
   assignSeat: { view: "seats", action: "edit" },
 };
+
+const sortPlans = (collection = []) =>
+  [...collection].sort((a, b) => {
+    const priceA = Number(a?.price) || 0;
+    const priceB = Number(b?.price) || 0;
+    if (priceA === priceB) {
+      return (a?.name || "").localeCompare(b?.name || "");
+    }
+    return priceA - priceB;
+  });
 
 function App() {
   const initialOnboarding =
@@ -97,7 +106,6 @@ function App() {
     allowedViews,
     hasPermission,
   } = useAuth();
-  const activeViewLabel = VIEW_LABELS[activeView] ?? "Workspace overview";
   const normalizedAllowedViews = useMemo(
     () => (allowedViews && allowedViews.length ? allowedViews : ALL_VIEW_IDS),
     [allowedViews]
@@ -427,27 +435,11 @@ const notificationRef = useRef(null);
         return;
       }
       try {
-        const { data, error: prefsError } = await supabase
-          .from("admin_settings")
-          .select("preferences")
-          .eq("admin_id", admin.id)
-          .maybeSingle();
+        const data = await api.getSettings();
         if (!mounted) return;
-        if (prefsError && prefsError.code !== "PGRST116") {
-          console.error("Branding fetch failed", prefsError);
-          return;
-        }
-        const prefs = data?.preferences || {};
+        const prefs = data || {};
         const logoPath = prefs.logoPath || "";
-        let logoUrl = prefs.logoUrl || "/images/abhyasika-logo.png";
-        if (logoPath) {
-          const { data: signedData, error: signedError } = await supabase.storage
-            .from("branding")
-            .createSignedUrl(logoPath, 60 * 60 * 24 * 30);
-          if (!signedError && signedData?.signedUrl) {
-            logoUrl = signedData.signedUrl;
-          }
-        }
+        const logoUrl = prefs.logoUrl || "/images/abhyasika-logo.png";
         setBranding({ logoUrl, logoPath });
       } catch (err) {
         if (!mounted) return;
@@ -458,7 +450,7 @@ const notificationRef = useRef(null);
     return () => {
       mounted = false;
     };
-  }, [isAuthenticated, admin?.id]);
+  }, [api, isAuthenticated, admin?.id]);
 
   useEffect(() => {
     if (isAuthenticated) return;
@@ -501,7 +493,7 @@ const notificationRef = useRef(null);
             api.listExpenseCategories ? api.listExpenseCategories() : [],
           ]);
         if (!mounted) return;
-        setPlans(planData);
+        setPlans(sortPlans(planData));
         setStudents(studentData);
         setSeats(seatData);
         setPayments(paymentData);
@@ -627,6 +619,50 @@ const notificationRef = useRef(null);
     },
     [normalizedAllowedViews, showToast]
   );
+
+  const handleCreatePlan = async (payload) => {
+    try {
+      setError("");
+      const plan = await api.createPlan({ ...payload, audit: getAuditContext() });
+      setPlans((prev) => sortPlans([...prev, plan]));
+      showToast("Plan created.");
+      return plan;
+    } catch (err) {
+      const message = err.message ?? "Failed to create plan.";
+      setError(message);
+      showToast(message, "error");
+      throw err;
+    }
+  };
+
+  const handleUpdatePlan = async (planId, updates) => {
+    try {
+      setError("");
+      const plan = await api.updatePlan(planId, { ...updates, audit: getAuditContext() });
+      setPlans((prev) => sortPlans(prev.map((item) => (item.id === planId ? plan : item))));
+      showToast("Plan updated.");
+      return plan;
+    } catch (err) {
+      const message = err.message ?? "Failed to update plan.";
+      setError(message);
+      showToast(message, "error");
+      throw err;
+    }
+  };
+
+  const handleDeletePlan = async (planId) => {
+    try {
+      setError("");
+      await api.deletePlan(planId, getAuditContext());
+      setPlans((prev) => prev.filter((plan) => plan.id !== planId));
+      showToast("Plan removed.");
+    } catch (err) {
+      const message = err.message ?? "Failed to delete plan.";
+      setError(message);
+      showToast(message, "error");
+      throw err;
+    }
+  };
 
   const handleCreateStudent = async (formData) => {
     try {
@@ -1110,7 +1146,7 @@ const notificationRef = useRef(null);
                     api.listPayments(),
                     api.listExpenses(),
                   ]);
-                  setPlans(planData);
+                  setPlans(sortPlans(planData));
                   setStudents(studentData);
                   setSeats(seatData);
                   setPayments(paymentData);
@@ -1216,6 +1252,10 @@ const notificationRef = useRef(null);
             expenseCategories={expenseCategories}
             onAddCategory={handleCreateCategory}
             onDeleteCategory={handleDeleteCategory}
+            plans={plans}
+            onAddPlan={handleCreatePlan}
+            onUpdatePlan={handleUpdatePlan}
+            onDeletePlan={handleDeletePlan}
           />
         )}
         </div>

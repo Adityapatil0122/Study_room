@@ -3,6 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import pinoHttp from "pino-http";
+import path from "path";
 import { config } from "./config/env.js";
 import { logger } from "./utils/logger.js";
 import router from "./routes/index.js";
@@ -39,6 +40,7 @@ app.use(
   })
 );
 app.use(express.json());
+app.use("/uploads", express.static(path.resolve(config.uploadsDir)));
 
 app.get("/health", (req, res) => {
   res.json({
@@ -54,4 +56,3 @@ app.use(notFound);
 app.use(errorHandler);
 
 export default app;
-

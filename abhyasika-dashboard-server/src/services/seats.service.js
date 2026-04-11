@@ -1,134 +1,214 @@
-import { supabase } from "../config/supabaseClient.js";
-import { ensureSupabaseResult } from "../utils/supabase.js";
 import { AppError } from "../utils/AppError.js";
-import {
-  assignSeatToStudent,
-  clearStudentSeat,
-} from "./students.service.js";
+import { randomUUID } from "crypto";
+import { query, queryOne, withTransaction } from "../db/connection.js";
+import { recordAudit } from "./audit.service.js";
+import { assignSeatToStudent, clearStudentSeat } from "./students.service.js";
 
-export async function listSeats() {
-  const result = await supabase
-    .from("seats")
-    .select("*, student:current_student_id (name, renewal_date)")
-    .order("seat_number", { ascending: true });
+export async function listSeats(workspaceOwnerId) {
+  const rows = await query(
+    `
+      SELECT *
+      FROM seats
+      WHERE workspace_owner_id = ?
+      ORDER BY seat_number ASC
+    `,
+    [workspaceOwnerId]
+  );
 
-  return ensureSupabaseResult(result, "Failed to fetch seats");
+  return rows;
 }
 
-export async function assignSeat(seatId, studentId) {
-  const { data: seat, error: seatError } = await supabase
-    .from("seats")
-    .select("*")
-    .eq("id", seatId)
-    .single();
-  if (seatError) {
-    if (seatError.code === "PGRST116") {
-      throw new AppError("Seat not found", 404);
+async function getSeatOrThrow(seatId, workspaceOwnerId, connection) {
+  const row = await queryOne(
+    "SELECT * FROM seats WHERE id = ? AND workspace_owner_id = ? LIMIT 1",
+    [seatId, workspaceOwnerId],
+    connection
+  );
+
+  if (!row) {
+    throw new AppError("Seat not found", 404);
+  }
+
+  return row;
+}
+
+export async function assignSeat(workspaceOwnerId, seatId, studentId, audit = null) {
+  return withTransaction(async (connection) => {
+    const seat = await getSeatOrThrow(seatId, workspaceOwnerId, connection);
+    if (seat.status === "maintenance") {
+      throw new AppError("Seat is under maintenance", 400);
     }
-    throw new AppError(seatError.message, 500);
-  }
+    if (seat.current_student_id) {
+      throw new AppError("Seat is already occupied", 400);
+    }
 
-  if (seat.status === "maintenance") {
-    throw new AppError("Seat is under maintenance", 400);
-  }
-  if (seat.current_student_id) {
-    throw new AppError("Seat is already occupied", 400);
-  }
+    const student = await queryOne(
+      `
+        SELECT id, name, current_seat_id
+        FROM students
+        WHERE id = ? AND workspace_owner_id = ?
+        LIMIT 1
+      `,
+      [studentId, workspaceOwnerId],
+      connection
+    );
 
-  const { data: student, error: studentError } = await supabase
-    .from("students")
-    .select("id, name, current_seat_id")
-    .eq("id", studentId)
-    .single();
-  if (studentError) {
-    if (studentError.code === "PGRST116") {
+    if (!student) {
       throw new AppError("Student not found", 404);
     }
-    throw new AppError(studentError.message, 500);
-  }
-
-  if (student.current_seat_id) {
-    throw new AppError("Student already has an assigned seat", 400);
-  }
-
-  const updatedSeatResult = await supabase
-    .from("seats")
-    .update({ status: "occupied", current_student_id: studentId })
-    .eq("id", seatId)
-    .select("*")
-    .single();
-
-  const updatedSeat = ensureSupabaseResult(
-    updatedSeatResult,
-    "Failed to assign seat"
-  );
-
-  const updatedStudent = await assignSeatToStudent(studentId, seatId);
-
-  return { seat: updatedSeat, student: updatedStudent };
-}
-
-export async function deallocateSeat(seatId) {
-  const { data: seat, error: seatError } = await supabase
-    .from("seats")
-    .select("*")
-    .eq("id", seatId)
-    .single();
-  if (seatError) {
-    if (seatError.code === "PGRST116") {
-      throw new AppError("Seat not found", 404);
+    if (student.current_seat_id) {
+      throw new AppError("Student already has an assigned seat", 400);
     }
-    throw new AppError(seatError.message, 500);
-  }
 
-  const updatedSeatResult = await supabase
-    .from("seats")
-    .update({ status: "available", current_student_id: null })
-    .eq("id", seatId)
-    .select("*")
-    .single();
-  const updatedSeat = ensureSupabaseResult(
-    updatedSeatResult,
-    "Failed to deallocate seat"
-  );
+    await query(
+      `
+        UPDATE seats
+        SET status = 'occupied', current_student_id = ?
+        WHERE id = ? AND workspace_owner_id = ?
+      `,
+      [studentId, seatId, workspaceOwnerId],
+      connection
+    );
 
-  let updatedStudent = null;
-  if (seat.current_student_id) {
-    updatedStudent = await clearStudentSeat(seat.current_student_id);
-  }
+    const updatedStudent = await assignSeatToStudent(studentId, workspaceOwnerId, seatId, connection);
+    const updatedSeat = await queryOne("SELECT * FROM seats WHERE id = ?", [seatId], connection);
 
-  return { seat: updatedSeat, student: updatedStudent };
+    await recordAudit(
+      {
+        workspaceOwnerId,
+        objectType: "seats",
+        objectId: seatId,
+        action: "assign",
+        actorId: audit?.actor_id,
+        actorRole: audit?.actor_role,
+        metadata: { student_id: studentId, seat_number: seat.seat_number },
+      },
+      connection
+    );
+
+    await recordAudit(
+      {
+        workspaceOwnerId,
+        objectType: "students",
+        objectId: studentId,
+        action: "seat-assigned",
+        actorId: audit?.actor_id,
+        actorRole: audit?.actor_role,
+        metadata: { seat_id: seatId, seat_number: seat.seat_number },
+      },
+      connection
+    );
+
+    return { seat: updatedSeat, student: updatedStudent };
+  });
 }
 
-export async function createSeat(payload = {}) {
+export async function deallocateSeat(workspaceOwnerId, seatId, audit = null) {
+  return withTransaction(async (connection) => {
+    const seat = await getSeatOrThrow(seatId, workspaceOwnerId, connection);
+
+    await query(
+      `
+        UPDATE seats
+        SET status = 'available', current_student_id = NULL
+        WHERE id = ? AND workspace_owner_id = ?
+      `,
+      [seatId, workspaceOwnerId],
+      connection
+    );
+
+    let updatedStudent = null;
+    if (seat.current_student_id) {
+      updatedStudent = await clearStudentSeat(seat.current_student_id, workspaceOwnerId, connection);
+    }
+
+    await recordAudit(
+      {
+        workspaceOwnerId,
+        objectType: "seats",
+        objectId: seatId,
+        action: "deallocate",
+        actorId: audit?.actor_id,
+        actorRole: audit?.actor_role,
+        metadata: {
+          previous_student_id: seat.current_student_id,
+          seat_number: seat.seat_number,
+        },
+      },
+      connection
+    );
+
+    if (seat.current_student_id) {
+      await recordAudit(
+        {
+          workspaceOwnerId,
+          objectType: "students",
+          objectId: seat.current_student_id,
+          action: "seat-removed",
+          actorId: audit?.actor_id,
+          actorRole: audit?.actor_role,
+          metadata: {
+            seat_id: seatId,
+            seat_number: seat.seat_number,
+          },
+        },
+        connection
+      );
+    }
+
+    const updatedSeat = await queryOne("SELECT * FROM seats WHERE id = ?", [seatId], connection);
+    return { seat: updatedSeat, student: updatedStudent };
+  });
+}
+
+export async function createSeat(workspaceOwnerId, payload = {}, audit = null, connection) {
   const seatNumber = payload.seat_number?.trim();
   if (!seatNumber) {
     throw new AppError("Seat number is required", 400);
   }
 
   const normalizedSeatNumber = seatNumber.toUpperCase();
-  const existing = await supabase
-    .from("seats")
-    .select("id")
-    .eq("seat_number", normalizedSeatNumber)
-    .maybeSingle();
+  const existing = await queryOne(
+    `
+      SELECT id
+      FROM seats
+      WHERE workspace_owner_id = ? AND seat_number = ?
+      LIMIT 1
+    `,
+    [workspaceOwnerId, normalizedSeatNumber],
+    connection
+  );
 
-  if (existing.error && existing.error.code !== "PGRST116") {
-    throw new AppError(existing.error.message, 500);
-  }
-
-  if (existing.data) {
+  if (existing) {
     throw new AppError("Seat number already exists", 409);
   }
 
-  const insertResult = await supabase
-    .from("seats")
-    .insert({
-      seat_number: normalizedSeatNumber,
-      status: payload.status ?? "available",
-    })
-    .select("*")
-    .single();
+  const seatId = randomUUID();
+  await query(
+    `
+      INSERT INTO seats (
+        id,
+        workspace_owner_id,
+        seat_number,
+        status
+      ) VALUES (?, ?, ?, ?)
+    `,
+    [seatId, workspaceOwnerId, normalizedSeatNumber, payload.status ?? "available"],
+    connection
+  );
 
-  return ensureSupabaseResult(insertResult, "Failed to create seat");
+  await recordAudit(
+    {
+      workspaceOwnerId,
+      objectType: "seats",
+      objectId: seatId,
+      action: "create",
+      actorId: audit?.actor_id,
+      actorRole: audit?.actor_role,
+      metadata: { seat_number: normalizedSeatNumber },
+    },
+    connection
+  );
+
+  return queryOne("SELECT * FROM seats WHERE id = ?", [seatId], connection);
 }

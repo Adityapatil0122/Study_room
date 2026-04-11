@@ -1,39 +1,52 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Modal from "../common/Modal.jsx";
 import LucideIcon from "../icons/LucideIcon.jsx";
-import { supabase } from "../../lib/supabaseBrowser.js";
+import { createApiClient } from "../../lib/apiClient.js";
 
 const FEE_PLAN_OPTIONS = [
-  { value: "monthly", label: "Monthly Membership" },
+  { value: "monthly", label: "Monthly" },
+  { value: "rolling", label: "Rolling 30 Days" },
   { value: "limited", label: "Limited Days" },
 ];
 
-const FEE_CYCLES = [
-  { value: "calendar", label: "1st - 30th" },
-  { value: "rolling", label: "Rolling 30 days" },
+const GENDERS = ["Male", "Female", "Other"];
+const ID_PROOF_OPTIONS = [
+  { value: "aadhaar", label: "Aadhaar" },
+  { value: "pan", label: "PAN" },
 ];
 
-const SHIFTS = ["Morning", "Afternoon", "Evening", "Day"];
-const GENDERS = ["Male", "Female", "Other"];
-
-const PHOTO_BUCKET = "aadhar_pan";
+const ToggleSwitch = ({ checked, onToggle, disabled = false }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    onClick={() => (disabled ? null : onToggle(!checked))}
+    className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+      checked ? "bg-indigo-600" : "bg-slate-300"
+    } ${disabled ? "cursor-not-allowed opacity-60" : "focus:outline-none focus:ring-2 focus:ring-indigo-300"}`}
+    disabled={disabled}
+  >
+    <span
+      className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${
+        checked ? "translate-x-5" : "translate-x-1"
+      }`}
+    />
+  </button>
+);
 
 function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
+  const api = useMemo(() => createApiClient(), []);
   const isEdit = Boolean(student);
   const [form, setForm] = useState(() => ({
     name: student?.name ?? "",
     phone: student?.phone ?? "",
     email: student?.email ?? "",
     gender: student?.gender ?? "",
-    aadhaar: student?.aadhaar ?? "",
-    pan_card: student?.pan_card ?? "",
     address: student?.address ?? "",
-    city: student?.city ?? "",
     state: student?.state ?? "",
     pincode: student?.pincode ?? "",
-    attach_aadhaar_photo: false,
-    aadhaar_photo: null,
-    preferred_shift: student?.preferred_shift ?? "Morning",
+    id_proof_type: "aadhaar",
+    id_proof_file: null,
     fee_plan_type: student?.fee_plan_type ?? "monthly",
     fee_cycle: student?.fee_cycle ?? "calendar",
     limited_days: student?.limited_days ?? "",
@@ -72,17 +85,12 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
         return;
       }
       setHistoryLoading(true);
-      const { data, error } = await supabase
-        .from("audit_log")
-        .select("*")
-        .eq("object_type", "students")
-        .eq("object_id", student.id)
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (!active) return;
-      if (!error) {
+      try {
+        const data = await api.getStudentHistory(student.id);
+        if (!active) return;
         setHistory(data ?? []);
-      } else {
+      } catch (error) {
+        if (!active) return;
         console.warn("Student history load failed", error.message);
         setHistory([]);
       }
@@ -92,14 +100,11 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
     return () => {
       active = false;
     };
-  }, [open, student?.id]);
+  }, [api, open, student?.id]);
 
   const handleChange = (event) => {
     const { name, value, type, checked } = event.target;
     let nextValue = type === "checkbox" ? checked : value;
-    if (name === "pan_card") {
-      nextValue = value.toUpperCase();
-    }
     setForm((prev) => ({
       ...prev,
       [name]: nextValue,
@@ -109,52 +114,14 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
   const feeSummary =
     form.fee_plan_type === "limited"
       ? `${form.limited_days || "—"} days`
-      : form.fee_cycle === "rolling"
+      : form.fee_plan_type === "rolling" || form.fee_cycle === "rolling"
       ? "Rolling 30 days"
       : "Calendar month";
 
-  const uploadAadhaarPhoto = async (file, existingPath = null) => {
+  const uploadIdProofFile = async (file, existingPath = null, proofType = "aadhaar") => {
     if (!file) return existingPath;
-
-    const extension = file.name?.split(".").pop() || "jpg";
-    const uniqueId =
-      (typeof crypto !== "undefined" && crypto.randomUUID?.()) ||
-      `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const path =
-      existingPath && existingPath.startsWith("students/")
-        ? existingPath
-        : `students/${uniqueId}.${extension}`;
-
-    console.log("Uploading photo to:", PHOTO_BUCKET, path);
-
-    // Upload file to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from(PHOTO_BUCKET)
-      .upload(path, file, {
-        cacheControl: "3600",
-        upsert: true,
-        contentType: file.type,
-      });
-
-    if (uploadError) {
-      console.error("Storage upload error:", uploadError);
-      throw new Error(uploadError.message ?? "Unable to upload Aadhaar photo. Please check if the storage bucket exists and you have upload permissions.");
-    }
-
-    console.log("Photo uploaded successfully:", uploadData);
-
-    // Generate public URL for the uploaded file
-    const { data: urlData } = supabase.storage
-      .from(PHOTO_BUCKET)
-      .getPublicUrl(path);
-
-    if (!urlData?.publicUrl) {
-      console.warn("Could not generate public URL for uploaded photo. Returning path only.");
-    } else {
-      console.log("Public URL generated:", urlData.publicUrl);
-    }
-
-    return path;
+    const upload = await api.uploadStudentProof(file, proofType);
+    return upload?.path ?? existingPath;
   };
 
   const handleSubmit = async (event) => {
@@ -162,8 +129,6 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
     const phoneDigits = form.phone.replace(/\D/g, "");
     const phoneRegex = /^\d{10}$/;
     const emailRegex = /.+@.+\..+/;
-    const aadhaarDigits = form.aadhaar.replace(/\D/g, "");
-    const panRegex = /^[A-Z]{5}\d{4}[A-Z]$/;
     const pincodeRegex = /^\d{6}$/;
 
     if (!form.name.trim()) {
@@ -182,20 +147,8 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
       alert("Gender selection is required.");
       return;
     }
-    if (aadhaarDigits.length !== 12) {
-      alert("Aadhaar must be a 12 digit number (digits only).");
-      return;
-    }
-    if (!panRegex.test(form.pan_card.trim().toUpperCase())) {
-      alert("PAN must be 10 characters (e.g., ABCDE1234F).");
-      return;
-    }
     if (!form.address.trim()) {
       alert("Address is required.");
-      return;
-    }
-    if (!form.city.trim()) {
-      alert("City is required.");
       return;
     }
     if (!form.state.trim()) {
@@ -206,28 +159,35 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
       alert("Pincode must be a 6 digit number.");
       return;
     }
-    if (form.attach_aadhaar_photo) {
-      if (!form.aadhaar_photo) {
-        alert("Please attach an Aadhaar photo file.");
-        return;
-      }
-      const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
-      if (!allowedTypes.includes(form.aadhaar_photo.type)) {
-        alert("Aadhaar photo must be JPEG, PNG, or WEBP.");
+
+    const existingIdProofPath = student?.photo_url ?? null;
+    if (!existingIdProofPath && !form.id_proof_file) {
+      alert("Please upload an ID proof file.");
+      return;
+    }
+    if (form.id_proof_file) {
+      const allowedTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+      if (!allowedTypes.includes(form.id_proof_file.type)) {
+        alert("ID proof must be JPG, PNG, WEBP, or PDF.");
         return;
       }
       const maxSizeMb = 2;
-      if (form.aadhaar_photo.size > maxSizeMb * 1024 * 1024) {
-        alert(`Aadhaar photo must be under ${maxSizeMb} MB.`);
+      if (form.id_proof_file.size > maxSizeMb * 1024 * 1024) {
+        alert(`ID proof must be under ${maxSizeMb} MB.`);
         return;
       }
     }
-    let photoPath = student?.photo_url ?? null;
-    if (form.attach_aadhaar_photo && form.aadhaar_photo) {
+
+    let proofPath = existingIdProofPath;
+    if (form.id_proof_file) {
       try {
-        photoPath = await uploadAadhaarPhoto(form.aadhaar_photo, student?.photo_url);
+        proofPath = await uploadIdProofFile(
+          form.id_proof_file,
+          student?.photo_url,
+          form.id_proof_type
+        );
       } catch (uploadErr) {
-        alert(uploadErr?.message ?? "Failed to upload Aadhaar photo.");
+        alert(uploadErr?.message ?? "Failed to upload ID proof.");
         return;
       }
     }
@@ -237,13 +197,9 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
       phone: phoneDigits,
       email: form.email.trim() || null,
       gender: form.gender,
-      aadhaar: aadhaarDigits,
-      pan_card: form.pan_card.trim(),
       address: form.address.trim(),
-      city: form.city.trim(),
       state: form.state.trim(),
       pincode: form.pincode.trim(),
-      preferred_shift: form.preferred_shift,
       fee_plan_type: form.fee_plan_type,
       fee_cycle: form.fee_cycle,
       limited_days:
@@ -252,7 +208,7 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
           : null,
       registration_paid: form.registration_paid,
       join_date: form.join_date,
-      photo_url: photoPath,
+      photo_url: proofPath,
       initialPayment: form.initialPayment,
     };
 
@@ -286,7 +242,7 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
             />
           </label>
           <label className="flex flex-col text-sm font-medium text-slate-700">
-            Phone Number
+            Mobile Number
             <input
               name="phone"
               value={form.phone}
@@ -323,30 +279,6 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
               ))}
             </select>
           </label>
-          <label className="flex flex-col text-sm font-medium text-slate-700">
-            Aadhaar Number
-            <input
-              name="aadhaar"
-              value={form.aadhaar}
-              onChange={handleChange}
-              maxLength={14}
-              className="mt-1 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-              placeholder="1234 5678 9012"
-              required
-            />
-          </label>
-          <label className="flex flex-col text-sm font-medium text-slate-700">
-            PAN Card Number
-            <input
-              name="pan_card"
-              value={form.pan_card}
-              onChange={handleChange}
-              maxLength={10}
-              className="mt-1 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 uppercase tracking-wide outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-              placeholder="ABCDE1234F"
-              required
-            />
-          </label>
           <label className="flex flex-col text-sm font-medium text-slate-700 md:col-span-2">
             Address
             <textarea
@@ -359,18 +291,6 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
               required
             />
           </label>
-          <label className="flex flex-col text-sm font-medium text-slate-700">
-            City
-            <input
-              name="city"
-              value={form.city}
-              onChange={handleChange}
-              className="mt-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-              placeholder="City"
-              required
-            />
-          </label>
-        
           <label className="flex flex-col text-sm font-medium text-slate-700">
             State
             <input
@@ -394,90 +314,78 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
               required
             />
           </label>
-            <div className="flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50 p-3 md:col-span-2">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-slate-700">
-                Attach Aadhaar photo (JPEG/PNG/WEBP, under 2 MB)
-              </p>
-              <button
-                type="button"
-                onClick={() =>
-                  setForm((prev) => ({
-                    ...prev,
-                    attach_aadhaar_photo: !prev.attach_aadhaar_photo,
-                    aadhaar_photo: !prev.attach_aadhaar_photo ? prev.aadhaar_photo : null,
-                  }))
-                }
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                  form.attach_aadhaar_photo ? "bg-indigo-600" : "bg-slate-300"
-                }`}
-                aria-pressed={form.attach_aadhaar_photo}
+        </div>
+        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="flex flex-col text-sm font-medium text-slate-700">
+              ID Proof Type
+              <select
+                name="id_proof_type"
+                value={form.id_proof_type}
+                onChange={handleChange}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
               >
-                <span
-                  className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${
-                    form.attach_aadhaar_photo ? "translate-x-5" : "translate-x-1"
-                  }`}
-                />
-              </button>
-            </div>
-            {form.attach_aadhaar_photo ? (
-              <div className="flex flex-col gap-2">
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:border-indigo-300 transition">
+                {ID_PROOF_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col text-sm font-medium text-slate-700">
+              Upload ID Proof (JPG/PNG/PDF)
+              <div className="mt-1">
+                <label className="flex w-full cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-indigo-300">
                   <LucideIcon name="Upload" className="h-4 w-4" />
-                  <span>
-                    {form.aadhaar_photo ? form.aadhaar_photo.name : "Choose file"}
+                  <span className="flex-1 truncate text-left">
+                    {form.id_proof_file ? form.id_proof_file.name : "Choose file"}
                   </span>
                   <input
                     type="file"
-                    accept=".jpg,.jpeg,.png,.webp"
+                    accept=".jpg,.jpeg,.png,.pdf"
                     onChange={(event) => {
                       const file = event.target.files?.[0];
                       setForm((prev) => ({
                         ...prev,
-                        aadhaar_photo: file || null,
+                        id_proof_file: file || null,
                       }));
                     }}
                     className="hidden"
                   />
                 </label>
-                {form.aadhaar_photo && (
-                  <div className="relative rounded-xl border border-slate-200 overflow-hidden">
-                    <img
-                      src={URL.createObjectURL(form.aadhaar_photo)}
-                      alt="Aadhaar preview"
-                      className="w-full h-32 object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setForm((prev) => ({ ...prev, aadhaar_photo: null }))}
-                      className="absolute top-2 right-2 rounded-full bg-red-500 p-1 text-white hover:bg-red-600 transition"
-                      aria-label="Remove photo"
-                    >
-                      <LucideIcon name="X" className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
-                <p className="text-xs text-slate-500">
-                  Upload JPEG, PNG, or WEBP under 2 MB.
-                </p>
               </div>
-            ) : null}
+            </label>
           </div>
-          <label className="flex flex-col text-sm font-medium text-slate-700">
-            Preferred Shift
-            <select
-              name="preferred_shift"
-              value={form.preferred_shift}
-              onChange={handleChange}
-              className="mt-1 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-            >
-              {SHIFTS.map((shift) => (
-                <option key={shift} value={shift}>
-                  {shift}
-                </option>
-              ))}
-            </select>
-          </label>
+          {form.id_proof_file ? (
+            <div className="relative rounded-xl border border-slate-200 bg-white p-3">
+              {form.id_proof_file.type.startsWith("image/") ? (
+                <img
+                  src={URL.createObjectURL(form.id_proof_file)}
+                  alt="ID proof preview"
+                  className="h-40 w-full rounded-lg object-cover"
+                />
+              ) : (
+                <p className="text-sm text-slate-600">
+                  {form.id_proof_file.name} ready to upload.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => setForm((prev) => ({ ...prev, id_proof_file: null }))}
+                className="absolute top-3 right-3 rounded-full bg-red-500 p-1 text-white hover:bg-red-600 transition"
+                aria-label="Remove file"
+              >
+                <LucideIcon name="X" className="h-4 w-4" />
+              </button>
+            </div>
+          ) : student?.photo_url ? (
+            <p className="text-xs text-slate-500">
+              Existing ID proof on file. Upload a new file to replace it.
+            </p>
+          ) : null}
+          <p className="text-xs text-slate-500">
+            Upload clear scans under 500KB. Accepted formats: JPG, PNG,PDF.
+          </p>
         </div>
 
         <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
@@ -498,22 +406,6 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
                 ))}
               </select>
             </label>
-            <label className="flex flex-col text-sm font-medium text-slate-700">
-              Billing Cycle
-              <select
-                name="fee_cycle"
-                value={form.fee_cycle}
-                onChange={handleChange}
-                disabled={form.fee_plan_type === "limited"}
-                className="mt-1 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-100"
-              >
-                {FEE_CYCLES.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
             {form.fee_plan_type === "limited" ? (
               <label className="flex flex-col text-sm font-medium text-slate-700">
                 Number of Days
@@ -528,15 +420,20 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
                 />
               </label>
             ) : null}
-            <label className="flex items-center gap-3 rounded-xl border border-white/60 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm">
-              <input
-                type="checkbox"
-                name="registration_paid"
+            <label className="flex items-center justify-between rounded-xl border border-white/60 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm">
+              <span>Registration fee received</span>
+              <ToggleSwitch
                 checked={form.registration_paid}
-                onChange={handleChange}
-                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                onToggle={(next) =>
+                  handleChange({
+                    target: {
+                      name: "registration_paid",
+                      type: "checkbox",
+                      checked: next,
+                    },
+                  })
+                }
               />
-              Registration fee received
             </label>
           </div>
           <p className="mt-3 text-xs text-slate-500">
@@ -549,23 +446,21 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
             <p className="text-sm font-semibold text-slate-700">
               Initial Payment (optional)
             </p>
-            <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-              <input
-                type="checkbox"
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+              <span>Enable</span>
+              <ToggleSwitch
                 checked={form.initialPayment.enabled}
-                onChange={(event) =>
+                onToggle={(next) =>
                   setForm((prev) => ({
                     ...prev,
                     initialPayment: {
                       ...prev.initialPayment,
-                      enabled: event.target.checked,
+                      enabled: next,
                     },
                   }))
                 }
-                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
               />
-              Enable
-            </label>
+            </div>
           </div>
           {form.initialPayment.enabled ? (
             <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -650,71 +545,29 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
                   <option value="cash">Cash</option>
                 </select>
               </label>
-              <label className="flex flex-col text-sm font-medium text-slate-700">
-                Valid From
-                <input
-                  type="date"
-                  value={form.initialPayment.valid_from}
-                  onChange={(event) =>
-                    setForm((prev) => {
-                      const selectedPlan = plans.find(
-                        (plan) => plan.id === prev.initialPayment.plan_id
-                      );
-                      let nextValidUntil = prev.initialPayment.valid_until;
-                      if (selectedPlan) {
-                        nextValidUntil = new Date(
-                          Date.parse(event.target.value) +
-                            selectedPlan.duration_days * 86400000
-                        )
-                          .toISOString()
-                          .slice(0, 10);
-                      }
-                      return {
-                        ...prev,
-                        initialPayment: {
-                          ...prev.initialPayment,
-                          valid_from: event.target.value,
-                          valid_until: nextValidUntil,
-                        },
-                      };
-                    })
-                  }
-                  className="mt-1 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-                />
-              </label>
-              <label className="flex flex-col text-sm font-medium text-slate-700">
-                Valid Until
-                <input
-                  type="date"
-                  value={form.initialPayment.valid_until}
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      initialPayment: {
-                        ...prev.initialPayment,
-                        valid_until: event.target.value,
-                      },
-                    }))
-                  }
-                  className="mt-1 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-                />
-              </label>
-              <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 md:col-span-2">
-                <input
-                  type="checkbox"
+                <label className="flex flex-col text-sm font-medium text-slate-700">
+                  Valid From
+                  <input
+                    type="date"
+                    value={form.initialPayment.valid_from}
+                    readOnly
+                    className="mt-1 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-500 outline-none"
+                  />
+                </label>
+              <label className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 md:col-span-2">
+                <span>Include registration fees</span>
+                <ToggleSwitch
                   checked={form.initialPayment.includes_registration}
-                  onChange={(event) =>
+                  onToggle={(next) =>
                     setForm((prev) => ({
                       ...prev,
                       initialPayment: {
                         ...prev.initialPayment,
-                        includes_registration: event.target.checked,
+                        includes_registration: next,
                       },
                     }))
                   }
-                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                 />
-                Include registration fees
               </label>
               <label className="flex flex-col text-sm font-medium text-slate-700 md:col-span-2">
                 Notes (optional)
@@ -782,12 +635,17 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
               <label className="flex flex-col text-sm font-medium text-slate-700">
                 Status
                 <div className="mt-2 flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    name="is_active"
+                  <ToggleSwitch
                     checked={form.is_active}
-                    onChange={handleChange}
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    onToggle={(next) =>
+                      handleChange({
+                        target: {
+                          name: "is_active",
+                          type: "checkbox",
+                          checked: next,
+                        },
+                      })
+                    }
                   />
                   <span>{form.is_active ? "Active" : "Inactive"}</span>
                 </div>

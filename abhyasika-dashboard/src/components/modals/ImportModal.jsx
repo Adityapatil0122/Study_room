@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from "react";
-import * as XLSX from "xlsx";
+import readXlsxFile from "read-excel-file/browser";
 import Modal from "../common/Modal.jsx";
 import LucideIcon from "../icons/LucideIcon.jsx";
 
 const MAX_FILE_SIZE = 4 * 1024 * 1024;
-const ALLOWED_EXTENSIONS = [".csv", ".xls", ".xlsx"];
+const ALLOWED_EXTENSIONS = [".csv", ".xlsx"];
 
 const ENTITY_CONFIG = {
   students: {
@@ -79,9 +79,7 @@ const normalizeBoolean = (value) => {
 const normalizeDateValue = (value) => {
   if (!value && value !== 0) return null;
   if (typeof value === "number") {
-    const parsed = XLSX.SSF.parse_date_code(value);
-    if (!parsed) return null;
-    const jsDate = new Date(Date.UTC(parsed.y, parsed.m - 1, parsed.d));
+    const jsDate = new Date(Math.round((value - 25569) * 86400 * 1000));
     if (Number.isNaN(jsDate.getTime())) return null;
     return jsDate.toISOString().slice(0, 10);
   }
@@ -100,6 +98,80 @@ const normalizeRowKeys = (row) => {
     normalized[normalizedKey] = typeof value === "string" ? value.trim() : value;
   });
   return normalized;
+};
+
+const rowHasValue = (row) =>
+  row.some((value) => String(value ?? "").trim() !== "");
+
+const rowsToObjects = (rows) => {
+  const nonEmptyRows = rows.filter(rowHasValue);
+  if (!nonEmptyRows.length) return [];
+
+  const headers = nonEmptyRows[0].map(normalizeHeaderKey);
+  return nonEmptyRows
+    .slice(1)
+    .map((row) => {
+      const parsed = {};
+      headers.forEach((header, index) => {
+        if (!header) return;
+        parsed[header] = row[index] ?? "";
+      });
+      return normalizeRowKeys(parsed);
+    })
+    .filter((row) => Object.keys(row).length > 0 && rowHasValue(Object.values(row)));
+};
+
+const parseCsvRows = (text) => {
+  const rows = [];
+  let row = [];
+  let value = "";
+  let quoted = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (quoted) {
+      if (char === "\"" && next === "\"") {
+        value += "\"";
+        index += 1;
+      } else if (char === "\"") {
+        quoted = false;
+      } else {
+        value += char;
+      }
+      continue;
+    }
+
+    if (char === "\"" && value === "") {
+      quoted = true;
+    } else if (char === ",") {
+      row.push(value);
+      value = "";
+    } else if (char === "\n") {
+      row.push(value);
+      rows.push(row);
+      row = [];
+      value = "";
+    } else if (char !== "\r") {
+      value += char;
+    }
+  }
+
+  if (value || row.length) {
+    row.push(value);
+    rows.push(row);
+  }
+
+  return rows;
+};
+
+const readImportRows = async (file, extension) => {
+  if (extension === ".csv") {
+    return rowsToObjects(parseCsvRows(await file.text()));
+  }
+
+  return rowsToObjects(await readXlsxFile(file));
 };
 
 const buildStudentPreview = (rows, context) => {
@@ -340,7 +412,6 @@ function ImportModal({
   plans = [],
   payments = [],
   expenses = [],
-  categories = [],
   seats = [],
 }) {
   const config = ENTITY_CONFIG[entity] ?? ENTITY_CONFIG.students;
@@ -404,7 +475,7 @@ function ImportModal({
     if (!file) return;
     const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
     if (!ALLOWED_EXTENSIONS.includes(extension)) {
-      setFileError("Please upload a CSV or Excel file.");
+      setFileError("Please upload a CSV or XLSX file.");
       return;
     }
     if (file.size > MAX_FILE_SIZE) {
@@ -412,15 +483,12 @@ function ImportModal({
       return;
     }
     try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: "array" });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const sheetRows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+      const sheetRows = await readImportRows(file, extension);
       if (!sheetRows.length) {
         setFileError("No data found in the file.");
         return;
       }
-      const normalizedRows = sheetRows.map(normalizeRowKeys);
+      const normalizedRows = sheetRows;
       const allHeaders = new Set(Object.keys(normalizedRows[0]));
       const missing = config.requiredHeaders.filter((header) => !allHeaders.has(header));
       if (missing.length) {
@@ -472,7 +540,7 @@ function ImportModal({
     >
       <div className="space-y-4">
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-          <p className="font-semibold text-slate-800">Upload CSV or Excel</p>
+          <p className="font-semibold text-slate-800">Upload CSV or XLSX</p>
           <p className="text-xs text-slate-500">
             Required columns: {config.requiredHeaders.join(", ")}.
             Optional columns: {config.optionalHeaders.join(", ")}.
@@ -481,7 +549,7 @@ function ImportModal({
             <span>{fileName || "Choose file"}</span>
             <input
               type="file"
-              accept=".csv, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               className="hidden"
               onChange={handleFileChange}
             />

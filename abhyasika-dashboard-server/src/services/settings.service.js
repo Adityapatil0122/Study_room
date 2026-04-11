@@ -1,38 +1,41 @@
-import { supabase } from "../config/supabaseClient.js";
+import { query, queryOne } from "../db/connection.js";
 import { AppError } from "../utils/AppError.js";
-
-const TABLE = "admin_settings";
+import { buildPublicFileUrl } from "../utils/files.js";
+import { parseJson } from "../utils/data.js";
 
 export async function getAdminSettings(adminId) {
-  const result = await supabase
-    .from(TABLE)
-    .select("preferences")
-    .eq("admin_id", adminId)
-    .maybeSingle();
+  const row = await queryOne(
+    "SELECT preferences FROM admin_settings WHERE admin_id = ? LIMIT 1",
+    [adminId]
+  );
 
-  if (result.error && result.error.code !== "PGRST116") {
-    throw new AppError(result.error.message, 500);
+  if (!row) {
+    return null;
   }
 
-  return result.data?.preferences ?? null;
+  const preferences = parseJson(row.preferences, {});
+  if (preferences?.logoPath) {
+    preferences.logoUrl = buildPublicFileUrl(preferences.logoPath);
+  }
+
+  return preferences;
 }
 
 export async function upsertAdminSettings(adminId, preferences) {
-  const payload = {
-    admin_id: adminId,
-    preferences,
-  };
-
-  const result = await supabase
-    .from(TABLE)
-    .upsert(payload, { onConflict: "admin_id" })
-    .select("preferences")
-    .single();
-
-  if (result.error) {
-    throw new AppError(result.error.message, 500);
+  try {
+    await query(
+      `
+        INSERT INTO admin_settings (admin_id, preferences)
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE
+          preferences = VALUES(preferences),
+          updated_at = CURRENT_TIMESTAMP
+      `,
+      [adminId, JSON.stringify(preferences ?? {})]
+    );
+  } catch (error) {
+    throw new AppError(error.message, 500);
   }
 
-  return result.data.preferences;
+  return getAdminSettings(adminId);
 }
-

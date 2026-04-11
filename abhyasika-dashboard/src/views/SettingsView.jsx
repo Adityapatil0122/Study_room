@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useState, memo } from "react";
+import React, { useEffect, useMemo, useState, memo, useRef } from "react";
 import LucideIcon from "../components/icons/LucideIcon.jsx";
+import PlanModal from "../components/modals/PlanModal.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
-import { supabase } from "../lib/supabaseBrowser.js";
+import { createApiClient } from "../lib/apiClient.js";
 import LoadingState from "../components/common/LoadingState.jsx";
 import {
-  ALL_VIEW_IDS,
   VIEW_DEFINITIONS,
   VIEW_ACTIONS,
   buildPermissionTemplate,
@@ -43,6 +43,11 @@ const slugify = (value = "") =>
     .replace(/^-+|-+$/g, "")
     .substring(0, 24);
 
+const isSystemPlan = (plan) => {
+  const name = plan?.name?.trim().toLowerCase() || "";
+  return name === "monthly" || name.startsWith("rolling");
+};
+
 function SettingsView({
   seats = [],
   onAddSeat,
@@ -52,8 +57,19 @@ function SettingsView({
   expenseCategories = [],
   onAddCategory = async () => {},
   onDeleteCategory = async () => {},
+  plans = [],
+  onAddPlan = async () => {
+    throw new Error("Plan actions are unavailable.");
+  },
+  onUpdatePlan = async () => {
+    throw new Error("Plan actions are unavailable.");
+  },
+  onDeletePlan = async () => {
+    throw new Error("Plan actions are unavailable.");
+  },
 }) {
-  const { admin, apiBaseUrl, getAccessToken } = useAuth();
+  const api = useMemo(() => createApiClient(), []);
+  const { admin } = useAuth();
   const baseProfile = useMemo(
     () => ({
       ...defaultProfile,
@@ -107,7 +123,12 @@ function SettingsView({
   const [teamSaving, setTeamSaving] = useState(false);
   const [categoryForm, setCategoryForm] = useState({ name: "", value: "" });
   const [categoryError, setCategoryError] = useState("");
-  const sectionKeys = ["seat", "roles", "team", "categories", "profile", "notifications", "automation"];
+  const [planModalOpen, setPlanModalOpen] = useState(false);
+  const [planEditing, setPlanEditing] = useState(null);
+  const [planListError, setPlanListError] = useState("");
+  const [planBusyId, setPlanBusyId] = useState("");
+  const seededDefaults = useRef(false);
+  const sectionKeys = ["seat", "plans", "roles", "team", "categories", "profile", "notifications", "automation"];
   const [openSections, setOpenSections] = useState(
     () =>
       sectionKeys.reduce(
@@ -138,17 +159,6 @@ function SettingsView({
     };
   }, [seats]);
 
-  const generateSignedLogoUrl = async (path) => {
-    if (!path) return "";
-    const { data, error } = await supabase.storage
-      .from("branding")
-      .createSignedUrl(path, 60 * 60 * 24 * 30); // 30 days
-    if (error) {
-      return "";
-    }
-    return data?.signedUrl || "";
-  };
-
   useEffect(() => {
     setProfile((prev) => ({
       ...prev,
@@ -166,6 +176,42 @@ function SettingsView({
   }, [profile.logoUrl, profile.logoPath, onLogoUploaded]);
 
   useEffect(() => {
+    if (seededDefaults.current) return;
+    if (!Array.isArray(plans)) return;
+    const names = plans.map((p) => p?.name?.trim().toLowerCase()).filter(Boolean);
+    const hasMonthly = names.includes("monthly");
+    const hasRolling = names.some((n) => n.startsWith("rolling"));
+    const tasks = [];
+    if (!hasMonthly) {
+      tasks.push(
+        onAddPlan({
+          name: "Monthly",
+          price: 0,
+          duration_days: 30,
+          is_active: true,
+        }).catch(() => {})
+      );
+    }
+    if (!hasRolling) {
+      tasks.push(
+        onAddPlan({
+          name: "Rolling 30 Days",
+          price: 0,
+          duration_days: 30,
+          is_active: true,
+        }).catch(() => {})
+      );
+    }
+    if (tasks.length) {
+      Promise.allSettled(tasks).finally(() => {
+        seededDefaults.current = true;
+      });
+    } else {
+      seededDefaults.current = true;
+    }
+  }, [plans, onAddPlan]);
+
+  useEffect(() => {
     let active = true;
     async function loadSettings() {
       try {
@@ -175,23 +221,10 @@ function SettingsView({
           setProfile(baseProfile);
           return;
         }
-        const { data, error } = await supabase
-          .from("admin_settings")
-          .select("preferences")
-          .eq("admin_id", admin.id)
-          .maybeSingle();
+        const data = await api.getSettings();
         if (!active) return;
-        if (error && error.code !== "PGRST116") {
-          throw new Error(error.message);
-        }
-        if (data?.preferences) {
-          const prefs = { ...baseProfile, ...data.preferences };
-          if (prefs.logoPath) {
-            const signed = await generateSignedLogoUrl(prefs.logoPath);
-            if (signed) {
-              prefs.logoUrl = signed;
-            }
-          }
+        if (data) {
+          const prefs = { ...baseProfile, ...data };
           setProfile(prefs);
           if (prefs.logoUrl) {
             onLogoUploaded({ url: prefs.logoUrl, path: prefs.logoPath });
@@ -213,7 +246,7 @@ function SettingsView({
     return () => {
       active = false;
     };
-  }, [admin?.id, baseProfile]);
+  }, [admin?.id, api, baseProfile, onLogoUploaded]);
 
   useEffect(() => {
     let active = true;
@@ -223,22 +256,15 @@ function SettingsView({
         return;
       }
       try {
-        const { data, error } = await supabase
-          .from("admin_roles")
-          .select("*")
-          .eq("created_by", admin.id)
-          .order("name", { ascending: true });
+        const data = await api.listRoles();
         if (!active) return;
-        if (error && error.code !== "PGRST116") {
-          throw new Error(error.message);
-        }
         const normalized =
           data?.map((role) => ({
             ...role,
             permissions: normalizePermissions(role.permissions),
           })) ?? [];
         setRoles(normalized);
-      } catch (err) {
+      } catch {
         if (!active) return;
         setRoles([]);
       }
@@ -248,7 +274,7 @@ function SettingsView({
     return () => {
       active = false;
     };
-  }, [admin?.id]);
+  }, [admin?.id, api]);
 
   const handleChange = (event) => {
     const { name, value, type, checked } = event.target;
@@ -277,16 +303,7 @@ function SettingsView({
       if (!admin?.id) {
         throw new Error("No active session found.");
       }
-      const { error: upsertError } = await supabase.from("admin_settings").upsert(
-        {
-          admin_id: admin.id,
-          preferences: profile,
-        },
-        { onConflict: "admin_id" }
-      );
-      if (upsertError) {
-        throw new Error(upsertError.message ?? "Unable to save settings.");
-      }
+      await api.updateSettings(profile);
       setSavedBanner("Settings saved! Changes will sync to your account.");
       setTimeout(() => setSavedBanner(""), 3200);
     } catch (err) {
@@ -315,37 +332,19 @@ function SettingsView({
       return;
     }
 
-    const ext = file.name.split(".").pop() || "png";
-    const path = `logos/${admin.id}/workspace-logo-${Date.now()}.${ext}`;
     try {
       setLogoUploading(true);
-      const { error: uploadError } = await supabase.storage.from("branding").upload(path, file, {
-        upsert: true,
-        contentType: file.type,
-      });
-      if (uploadError) throw uploadError;
-      const { data: signedData, error: signedError } = await supabase.storage
-        .from("branding")
-        .createSignedUrl(path, 60 * 60 * 24 * 30);
-      const { data: publicData } = supabase.storage.from("branding").getPublicUrl(path);
-      const signedUrl = !signedError && signedData?.signedUrl ? signedData.signedUrl : "";
-      const publicUrl = publicData?.publicUrl ? `${publicData.publicUrl}?v=${Date.now()}` : "";
-      const selectedUrl = signedUrl || publicUrl;
+      const upload = await api.uploadLogo(file);
+      const selectedUrl = upload?.url || "";
+      const path = upload?.path || "";
       const updatedProfile = { ...profile, logoUrl: selectedUrl, logoPath: path };
       setProfile(updatedProfile);
       onLogoUploaded({ url: selectedUrl, path });
-      const { error: upsertError } = await supabase.from("admin_settings").upsert(
-        {
-          admin_id: admin.id,
-          preferences: updatedProfile,
-        },
-        { onConflict: "admin_id" }
-      );
-      if (upsertError) throw upsertError;
+      await api.updateSettings(updatedProfile);
       setSavedBanner("Logo updated for your workspace.");
       setTimeout(() => setSavedBanner(""), 3200);
     } catch (err) {
-      setLogoUploadError(err.message || "Unable to upload logo. Check storage bucket.");
+      setLogoUploadError(err.message || "Unable to upload logo.");
     } finally {
       setLogoUploading(false);
       event.target.value = "";
@@ -483,17 +482,11 @@ function SettingsView({
 
     try {
       setRoleSaving(true);
-      const { data, error } = await supabase
-        .from("admin_roles")
-        .insert({
-          name: trimmed,
-          description: roleForm.description.trim() || null,
-          created_by: admin.id,
-          permissions: roleForm.permissions,
-        })
-        .select("*")
-        .single();
-      if (error) throw new Error(error.message);
+      const data = await api.createRole({
+        name: trimmed,
+        description: roleForm.description.trim() || null,
+        permissions: roleForm.permissions,
+      });
       const normalizedRole = {
         ...data,
         permissions: normalizePermissions(data.permissions),
@@ -514,8 +507,7 @@ function SettingsView({
   const handleRoleRemove = async (roleId) => {
     setRoleError("");
     try {
-      const { error } = await supabase.from("admin_roles").delete().eq("id", roleId);
-      if (error) throw new Error(error.message);
+      await api.deleteRole(roleId);
       setRoles((prev) => prev.filter((role) => role.id !== roleId));
     } catch (err) {
       setRoleError(err.message || "Unable to delete role.");
@@ -563,16 +555,6 @@ function SettingsView({
 
     try {
       setTeamSaving(true);
-      const token = await getAccessToken();
-      if (!token) {
-        throw new Error("Your session expired. Please login again.");
-      }
-
-      const endpoint =
-        teamForm.mode === "manual"
-          ? "/admin/team-members/manual"
-          : "/admin/team-members/invite";
-
       const payload = {
         email: teamForm.email.trim(),
         fullName: teamForm.fullName.trim(),
@@ -581,25 +563,17 @@ function SettingsView({
       if (teamForm.mode === "manual") {
         payload.password = teamForm.password;
       }
-
-      const response = await fetch(`${apiBaseUrl}${endpoint}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        throw new Error(errorBody?.message ?? "Unable to add teammate.");
-      }
+      const result =
+        teamForm.mode === "manual"
+          ? await api.createTeamMember(payload)
+          : await api.inviteTeamMember(payload);
 
       setTeamMessage(
         teamForm.mode === "manual"
           ? "Account created. Share credentials securely."
-          : "Invitation sent successfully."
+          : result?.temporaryPassword
+          ? `Invite prepared. Share this temporary password manually: ${result.temporaryPassword}`
+          : "Teammate account created."
       );
       setTeamForm((prev) => ({
         ...prev,
@@ -665,6 +639,37 @@ function SettingsView({
       await onDeleteCategory(categoryId);
     } catch (err) {
       setCategoryError(err.message || "Unable to delete category.");
+    }
+  };
+
+  const closePlanModal = () => {
+    setPlanModalOpen(false);
+    setPlanEditing(null);
+  };
+
+  const handlePlanModalSubmit = async (values) => {
+    if (planEditing) {
+      return onUpdatePlan(planEditing.id, values);
+    }
+    return onAddPlan(values);
+  };
+
+  const handlePlanDelete = async (plan) => {
+    if (isSystemPlan(plan)) {
+      setPlanListError("Core plans (Monthly/Rolling) cannot be deleted.");
+      return;
+    }
+    if (!plan?.id) return;
+    setPlanListError("");
+    const confirmed = typeof window !== "undefined" ? window.confirm(`Delete plan "${plan.name}"?`) : true;
+    if (!confirmed) return;
+    setPlanBusyId(plan.id);
+    try {
+      await onDeletePlan(plan.id);
+    } catch (err) {
+      setPlanListError(err.message || "Unable to delete plan.");
+    } finally {
+      setPlanBusyId("");
     }
   };
 
@@ -940,6 +945,142 @@ function SettingsView({
               ))}
           </div>
         </div>
+        ) : null}
+      </section>
+      <section className="rounded-3xl border border-slate-100 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-sm">
+        <button
+          type="button"
+          onClick={() => toggleSection("plans")}
+          className="flex w-full items-center justify-between rounded-2xl border border-transparent p-2 text-left transition hover:border-indigo-100"
+          aria-expanded={openSections.plans}
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-purple-100 text-purple-600">
+              <LucideIcon name="creditCard" className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                Fees Management
+              </h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Create plans that appear in student, payment, and renewal flows.
+              </p>
+            </div>
+          </div>
+          <LucideIcon
+            name={openSections.plans ? "ChevronUp" : "ChevronDown"}
+            className="h-4 w-4 text-slate-500 dark:text-slate-400"
+          />
+        </button>
+        {openSections.plans ? (
+          <div className="mt-4 space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Plans control fee suggestions, default validity, and duplicate detection. Keep inactive plans for history instead of deleting.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setPlanEditing(null);
+                  setPlanModalOpen(true);
+                }}
+                className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
+              >
+                <LucideIcon name="Plus" className="h-4 w-4" />
+                New Plan
+              </button>
+            </div>
+            {planListError ? (
+              <p className="text-xs font-semibold text-rose-600">{planListError}</p>
+            ) : null}
+            <div className="overflow-x-auto rounded-2xl border border-slate-100 dark:border-gray-800">
+              <table className="min-w-full divide-y divide-slate-100 text-sm dark:divide-gray-800">
+                <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:bg-gray-900/60 dark:text-slate-300">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Plan</th>
+                    <th className="px-4 py-3 text-left">Amount</th>
+                    <th className="px-4 py-3 text-left">Duration</th>
+                    <th className="px-4 py-3 text-left">Status</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-gray-800 dark:text-slate-200">
+                  {plans.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400"
+                      >
+                        No plans yet. Create one to start assigning it to students.
+                      </td>
+                    </tr>
+                  ) : (
+                    plans.map((plan) => (
+                      <tr key={plan.id} className="hover:bg-slate-50/70 dark:hover:bg-gray-800/40">
+                        <td className="px-4 py-3">
+                          <p className="font-semibold text-slate-900 dark:text-slate-100">
+                            {plan.name}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                          ₹{Number(plan.price ?? 0).toLocaleString("en-IN")}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                          {plan.duration_days || 0} days
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                              plan.is_active
+                                ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-100"
+                                : "bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-slate-300"
+                            }`}
+                          >
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                plan.is_active ? "bg-emerald-500" : "bg-slate-400"
+                              }`}
+                            />
+                            {plan.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPlanEditing({ ...plan, isSystem: isSystemPlan(plan) });
+                                setPlanModalOpen(true);
+                              }}
+                              className="rounded-full border border-slate-200 dark:border-gray-700 p-1.5 text-slate-500 transition hover:border-indigo-200 hover:text-indigo-600 dark:text-slate-300 dark:hover:border-indigo-500 dark:hover:text-indigo-200"
+                              aria-label={`Edit ${plan.name}`}
+                            >
+                              <LucideIcon name="Pencil" className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handlePlanDelete(plan)}
+                              disabled={planBusyId === plan.id}
+                              className={`rounded-full border border-slate-200 dark:border-gray-700 p-1.5 text-slate-500 transition hover:border-rose-200 hover:text-rose-600 disabled:cursor-not-allowed dark:text-slate-300 dark:hover:border-rose-500 dark:hover:text-rose-200 ${
+                                isSystemPlan(plan) ? "opacity-60 cursor-not-allowed" : ""
+                              }`}
+                              aria-label={`Delete ${plan.name}`}
+                            >
+                              {planBusyId === plan.id ? (
+                                <LucideIcon name="Loader2" className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <LucideIcon name="Trash2" className="h-4 w-4" />
+                              )}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         ) : null}
       </section>
       <section className="rounded-3xl border border-slate-100 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-sm">
@@ -1258,7 +1399,7 @@ function SettingsView({
                 Team Access
               </h2>
               <p className="text-sm text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                Spin up logins manually or send one-click invites tied to roles.
+                Create teammate logins and assign role-based access for this workspace.
               </p>
             </div>
           </div>
@@ -1272,7 +1413,7 @@ function SettingsView({
           <div className="flex flex-wrap gap-3">
             {[
               { key: "manual", label: "Manual account" },
-              { key: "invite", label: "Email invite" },
+              { key: "invite", label: "Temp password" },
             ].map((option) => (
               <label
                 key={option.key}
@@ -1324,19 +1465,27 @@ function SettingsView({
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="flex flex-col text-sm font-medium text-slate-700 dark:text-slate-200">
-               Role 
-              <input
+              Role
+              <select
                 name="roleName"
                 value={teamForm.roleName}
                 onChange={handleTeamChange}
-                placeholder={
-                  roles.length === 0
-                    ? "Create a role first"
-                    : `e.g. ${roles[0]?.name}`
-                }
-                className="mt-1 rounded-xl border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                className="mt-1 rounded-xl border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:opacity-60"
                 disabled={roles.length === 0}
-              />
+              >
+                {roles.length === 0 ? (
+                  <option value="">Create a role first</option>
+                ) : (
+                  <>
+                    <option value="">Select role</option>
+                    {roles.map((role) => (
+                      <option key={role.id} value={role.name}>
+                        {role.name}
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
             </label>
             {teamForm.mode === "manual" ? (
               <label className="flex flex-col text-sm font-medium text-slate-700 dark:text-slate-200">
@@ -1352,7 +1501,7 @@ function SettingsView({
               </label>
             ) : (
               <div className="rounded-2xl border border-slate-100 dark:border-gray-800 bg-slate-50 dark:bg-gray-900/60 px-3 py-2 text-sm text-slate-600 dark:text-slate-300">
-                The teammate will set their own password from the invite email.
+                XAMPP mode creates a temporary password for you to share manually.
               </div>
             )}
           </div>
@@ -1370,7 +1519,7 @@ function SettingsView({
               disabled={teamSaving || roles.length === 0}
               className="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60"
             >
-              {teamSaving ? "Saving…" : teamForm.mode === "manual" ? "Create login" : "Send invite"}
+              {teamSaving ? "Saving…" : teamForm.mode === "manual" ? "Create login" : "Create temp access"}
             </button>
           </div>
         </form>
@@ -1677,6 +1826,13 @@ function SettingsView({
           </div>
         </div>
       </form>
+      <PlanModal
+        open={planModalOpen}
+        onClose={closePlanModal}
+        plan={planEditing}
+        onSubmit={handlePlanModalSubmit}
+        isSystem={planEditing?.isSystem}
+      />
     </div>
   );
 }

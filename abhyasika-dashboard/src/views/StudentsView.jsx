@@ -596,7 +596,7 @@ function StudentsView({
                 className="overflow-x-auto rounded-2xl border border-slate-100 dark:border-gray-800"
                 style={{ scrollbarWidth: "thin" }}
               >
-                <table className="min-w-[900px] w-full table-auto divide-y divide-slate-100 text-sm dark:divide-gray-800">
+                <table className="min-w-full table-auto divide-y divide-slate-100 text-sm dark:divide-gray-800">
                   <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:bg-gray-900 dark:text-slate-300">
                     <tr>
                       <th className="px-4 py-3 text-left dark:text-slate-300">#</th>
@@ -662,7 +662,7 @@ function StudentsView({
                 className="overflow-x-auto rounded-2xl border border-slate-100 dark:border-gray-800"
                 style={{ scrollbarWidth: "thin" }}
               >
-                <table className="min-w-[1100px] w-full table-auto divide-y divide-slate-100 text-sm dark:divide-gray-800">
+                <table className="min-w-full table-auto divide-y divide-slate-100 text-sm dark:divide-gray-800">
                   <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:bg-gray-900 dark:text-slate-300">
                     <tr>
                       <th className="px-4 py-3 text-left dark:text-slate-300">#</th>

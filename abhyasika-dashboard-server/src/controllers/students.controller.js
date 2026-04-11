@@ -3,8 +3,11 @@ import {
   createStudent,
   updateStudent,
   toggleStudentActive,
+  importStudents,
+  listStudentHistory,
 } from "../services/students.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { buildPublicFileUrl, toRelativeUploadPath } from "../utils/files.js";
 
 export const getStudents = asyncHandler(async (req, res) => {
   const { search, is_active } = req.query;
@@ -15,24 +18,72 @@ export const getStudents = asyncHandler(async (req, res) => {
   if (search) {
     filters.search = search;
   }
-  const students = await listStudents(filters);
+  const students = await listStudents(req.auth.workspaceOwnerId, filters);
   res.json({ data: students });
 });
 
 export const postStudent = asyncHandler(async (req, res) => {
-  const student = await createStudent(req.body);
+  const student = await createStudent(
+    req.auth.workspaceOwnerId,
+    req.body ?? {},
+    req.body?.audit ?? null
+  );
   res.status(201).json({ data: student });
 });
 
 export const putStudent = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const student = await updateStudent(id, req.body);
+  const student = await updateStudent(
+    id,
+    req.auth.workspaceOwnerId,
+    req.body ?? {},
+    req.body?.audit ?? null
+  );
   res.json({ data: student });
 });
 
 export const patchStudentToggleActive = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const student = await toggleStudentActive(id);
+  const student = await toggleStudentActive(
+    id,
+    req.auth.workspaceOwnerId,
+    req.body?.audit ?? null
+  );
   res.json({ data: student });
 });
 
+export const getStudentHistory = asyncHandler(async (req, res) => {
+  const data = await listStudentHistory(req.auth.workspaceOwnerId, req.params.id);
+  res.json({ data });
+});
+
+export const postImportStudents = asyncHandler(async (req, res) => {
+  const rows = req.body?.rows ?? [];
+  const data = await importStudents(
+    req.auth.workspaceOwnerId,
+    rows,
+    req.body?.audit ?? null
+  );
+  res.status(201).json({ data });
+});
+
+export const postUploadStudentProof = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({
+      error: {
+        message: "File is required",
+        status: 400,
+      },
+    });
+  }
+
+  const path = toRelativeUploadPath(req.file.path);
+  res.status(201).json({
+    data: {
+      path,
+      url: buildPublicFileUrl(path),
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+    },
+  });
+});
