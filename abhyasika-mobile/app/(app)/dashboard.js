@@ -1,6 +1,7 @@
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Modal,
   Pressable,
   RefreshControl,
@@ -11,7 +12,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Armchair,
@@ -23,9 +24,9 @@ import {
   Home,
   LayoutDashboard,
   LogOut,
+  Menu,
   Plus,
   QrCode,
-  RefreshCcw,
   Search,
   Settings2,
   Users2,
@@ -75,32 +76,36 @@ const plusDays = (dateValue, days) => {
 };
 
 function Card({ children, className = "", style }) {
-  return <View style={style} className={`rounded-lg border border-slate-100 bg-white p-4 shadow-sm ${className}`}>{children}</View>;
+  return <View style={style} className={`rounded-xl border border-slate-100 bg-white p-5 shadow-sm ${className}`}>{children}</View>;
 }
 
-function Stat({ label, value, icon: Icon = BarChart3, tone = "bg-slate-100", style, compact = false }) {
-  return (
-    <Card style={style} className="mb-3">
-      <View className={`mb-3 items-center justify-center rounded-lg ${compact ? "h-9 w-9" : "h-10 w-10"} ${tone}`}>
-        <Icon size={compact ? 17 : 19} color="#334155" />
+function Stat({ label, value, icon: Icon = BarChart3, tone = "bg-slate-100", style, compact = false, onPress }) {
+  const content = (
+    <Card style={onPress ? undefined : style} className="mb-4">
+      <View className={`mb-4 items-center justify-center rounded-xl ${compact ? "h-11 w-11" : "h-12 w-12"} ${tone}`}>
+        <Icon size={compact ? 20 : 22} color="#334155" />
       </View>
-      <Text className="text-xs font-semibold uppercase text-slate-400">{label}</Text>
-      <Text className={`${compact ? "text-lg" : "text-xl"} mt-1 font-bold text-slate-950`}>{value}</Text>
+      <Text className="text-sm font-semibold uppercase tracking-wide text-slate-400">{label}</Text>
+      <Text className={`${compact ? "text-xl" : "text-2xl"} mt-1 font-bold text-slate-950`}>{value}</Text>
     </Card>
   );
+  if (onPress) {
+    return <TouchableOpacity activeOpacity={0.7} onPress={onPress} style={style}>{content}</TouchableOpacity>;
+  }
+  return content;
 }
 
 function Header({ title, subtitle, action, onAction }) {
   return (
-    <View className="mb-4 flex-row items-start justify-between gap-3">
+    <View className="mb-5 flex-row items-start justify-between gap-3">
       <View className="flex-1">
-        <Text className="text-2xl font-bold text-slate-950">{title}</Text>
-        <Text className="mt-1 text-sm text-slate-500">{subtitle}</Text>
+        <Text className="text-3xl font-bold text-slate-950">{title}</Text>
+        <Text className="mt-1.5 text-base text-slate-500">{subtitle}</Text>
       </View>
       {action ? (
-        <TouchableOpacity onPress={onAction} className="flex-row items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2">
-          <Plus size={15} color="white" />
-          <Text className="text-sm font-semibold text-white">{action}</Text>
+        <TouchableOpacity onPress={onAction} className="flex-row items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5">
+          <Plus size={17} color="white" />
+          <Text className="text-base font-semibold text-white">{action}</Text>
         </TouchableOpacity>
       ) : null}
     </View>
@@ -109,15 +114,15 @@ function Header({ title, subtitle, action, onAction }) {
 
 function Input({ label, value, onChangeText, placeholder, keyboardType = "default" }) {
   return (
-    <View className="mb-3">
-      <Text className="mb-1 text-xs font-semibold uppercase text-slate-500">{label}</Text>
+    <View className="mb-4">
+      <Text className="mb-1.5 text-sm font-semibold uppercase text-slate-500">{label}</Text>
       <TextInput
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor="#94a3b8"
         keyboardType={keyboardType}
-        className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-base text-slate-900"
+        className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-lg text-slate-900"
       />
     </View>
   );
@@ -125,8 +130,8 @@ function Input({ label, value, onChangeText, placeholder, keyboardType = "defaul
 
 function ChipPicker({ label, items, value, onChange, getLabel, getValue }) {
   return (
-    <View className="mb-3">
-      <Text className="mb-2 text-xs font-semibold uppercase text-slate-500">{label}</Text>
+    <View className="mb-4">
+      <Text className="mb-2 text-sm font-semibold uppercase text-slate-500">{label}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <View className="flex-row gap-2">
           {items.map((item) => {
@@ -136,9 +141,9 @@ function ChipPicker({ label, items, value, onChange, getLabel, getValue }) {
               <TouchableOpacity
                 key={String(itemValue)}
                 onPress={() => onChange(itemValue)}
-                className={`rounded-lg border px-3 py-2 ${active ? "border-indigo-600 bg-indigo-600" : "border-slate-200 bg-white"}`}
+                className={`rounded-xl border px-4 py-2.5 ${active ? "border-indigo-600 bg-indigo-600" : "border-slate-200 bg-white"}`}
               >
-                <Text className={`text-sm font-semibold ${active ? "text-white" : "text-slate-600"}`}>{getLabel(item)}</Text>
+                <Text className={`text-base font-semibold ${active ? "text-white" : "text-slate-600"}`}>{getLabel(item)}</Text>
               </TouchableOpacity>
             );
           })}
@@ -152,14 +157,14 @@ function Sheet({ title, visible, onClose, children }) {
   return (
     <Modal visible={visible} transparent animationType="slide">
       <View className="flex-1 justify-end bg-black/40">
-        <View className="max-h-[88%] rounded-t-lg bg-white">
-          <View className="flex-row items-center justify-between border-b border-slate-100 px-5 py-4">
-            <Text className="text-lg font-bold text-slate-950">{title}</Text>
-            <Pressable onPress={onClose} className="rounded-lg bg-slate-100 p-2">
-              <X size={18} color="#334155" />
+        <View className="max-h-[88%] rounded-t-2xl bg-white">
+          <View className="flex-row items-center justify-between border-b border-slate-100 px-6 py-5">
+            <Text className="text-xl font-bold text-slate-950">{title}</Text>
+            <Pressable onPress={onClose} className="rounded-xl bg-slate-100 p-2.5">
+              <X size={20} color="#334155" />
             </Pressable>
           </View>
-          <ScrollView className="px-5 py-4" keyboardShouldPersistTaps="handled">{children}<View className="h-8" /></ScrollView>
+          <ScrollView className="px-6 py-5" keyboardShouldPersistTaps="handled">{children}<View className="h-10" /></ScrollView>
         </View>
       </View>
     </Modal>
@@ -177,6 +182,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [modal, setModal] = useState("");
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [studentForm, setStudentForm] = useState({ name: "", phone: "", email: "", join_date: today(), current_plan_id: "" });
   const [paymentForm, setPaymentForm] = useState({ student_id: "", plan_id: "", amount_paid: "", valid_from: today(), payment_mode: "upi" });
@@ -184,12 +190,31 @@ export default function Dashboard() {
   const [seatForm, setSeatForm] = useState({ seat_number: "" });
   const [assignForm, setAssignForm] = useState({ seatId: "", studentId: "" });
   const [planForm, setPlanForm] = useState({ name: "", price: "", duration_days: "30" });
-  const contentWidth = Math.max(width - 32, 280);
-  const statGap = 10;
+  const contentWidth = Math.max(width - 40, 280);
+  const statGap = 12;
   const statColumns = contentWidth < 330 ? 1 : contentWidth >= 720 ? 3 : 2;
   const statWidth = (contentWidth - statGap * (statColumns - 1)) / statColumns;
-  const statCardStyle = { width: statWidth, minHeight: contentWidth < 360 ? 92 : 98 };
+  const statCardStyle = { width: statWidth, minHeight: contentWidth < 360 ? 108 : 116 };
   const compactStats = contentWidth < 370;
+
+  // Drawer slide animation
+  const drawerAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(drawerAnim, {
+      toValue: drawerOpen ? 1 : 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [drawerOpen, drawerAnim]);
+
+  const drawerTranslateX = drawerAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-320, 0],
+  });
+  const overlayOpacity = drawerAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
 
   const load = useCallback(async () => {
     setError("");
@@ -361,21 +386,21 @@ export default function Dashboard() {
     return (
       <SafeAreaView className="flex-1 items-center justify-center bg-slate-50">
         <ActivityIndicator size="large" color="#4f46e5" />
-        <Text className="mt-3 text-sm font-semibold text-slate-500">Loading full dashboard...</Text>
+        <Text className="mt-3 text-base font-semibold text-slate-500">Loading full dashboard...</Text>
       </SafeAreaView>
     );
   }
 
   const dashboardView = (
     <>
-      <Header title="Welcome Admin" subtitle="Full admin dashboard scaled for phone." action="Refresh" onAction={refresh} />
+      <Header title="Welcome Admin" subtitle="Tap a card to jump to that section." />
       <View style={{ columnGap: statGap }} className="flex-row flex-wrap">
-        <Stat style={statCardStyle} compact={compactStats} label="Total Students" value={data.students.length} icon={Users2} tone="bg-blue-50" />
-        <Stat style={statCardStyle} compact={compactStats} label="Active Students" value={activeStudents.length} icon={Users2} tone="bg-emerald-50" />
-        <Stat style={statCardStyle} compact={compactStats} label="Seats Available" value={`${availableSeats.length} free`} icon={Armchair} tone="bg-slate-100" />
-        <Stat style={statCardStyle} compact={compactStats} label="Revenue Month" value={money(monthRevenue)} icon={BarChart3} tone="bg-violet-50" />
-        <Stat style={statCardStyle} compact={compactStats} label="Renewals 7 Days" value={renewals.length} icon={Bell} tone="bg-amber-50" />
-        <Stat style={statCardStyle} compact={compactStats} label="Expenses Month" value={money(monthExpenses)} icon={Wallet2} tone="bg-rose-50" />
+        <Stat style={statCardStyle} compact={compactStats} label="Total Students" value={data.students.length} icon={Users2} tone="bg-blue-50" onPress={() => setActive("students")} />
+        <Stat style={statCardStyle} compact={compactStats} label="Active Students" value={activeStudents.length} icon={Users2} tone="bg-emerald-50" onPress={() => setActive("students")} />
+        <Stat style={statCardStyle} compact={compactStats} label="Seats Available" value={`${availableSeats.length} free`} icon={Armchair} tone="bg-slate-100" onPress={() => setActive("seats")} />
+        <Stat style={statCardStyle} compact={compactStats} label="Revenue Month" value={money(monthRevenue)} icon={BarChart3} tone="bg-violet-50" onPress={() => setActive("reports")} />
+        <Stat style={statCardStyle} compact={compactStats} label="Renewals 7 Days" value={renewals.length} icon={Bell} tone="bg-amber-50" onPress={() => setActive("renewals")} />
+        <Stat style={statCardStyle} compact={compactStats} label="Expenses Month" value={money(monthExpenses)} icon={Wallet2} tone="bg-rose-50" onPress={() => setActive("expenses")} />
       </View>
     </>
   );
@@ -383,23 +408,23 @@ export default function Dashboard() {
   const studentsView = (
     <>
       <Header title="Student Management" subtitle={`${data.students.length} total. KYC, plans, seats, and billing.`} action="New" onAction={() => setModal("student")} />
-      <View className="mb-4 flex-row items-center rounded-lg border border-slate-200 bg-white px-3 py-2">
-        <Search size={17} color="#94a3b8" />
-        <TextInput value={search} onChangeText={setSearch} placeholder="Search students" placeholderTextColor="#94a3b8" className="ml-2 flex-1 text-base text-slate-900" />
+      <View className="mb-4 flex-row items-center rounded-xl border border-slate-200 bg-white px-4 py-3">
+        <Search size={20} color="#94a3b8" />
+        <TextInput value={search} onChangeText={setSearch} placeholder="Search students" placeholderTextColor="#94a3b8" className="ml-3 flex-1 text-lg text-slate-900" />
       </View>
       {filteredStudents.map((student) => (
-        <Card key={student.id} className="mb-3">
+        <Card key={student.id} className="mb-4">
           <View className="flex-row justify-between gap-3">
             <View className="flex-1">
-              <Text className="text-lg font-bold text-slate-950">{student.name}</Text>
-              <Text className="mt-1 text-sm text-slate-500">{student.phone || "No phone"}</Text>
-              <Text className="mt-1 text-sm text-slate-500">{planName(data.plans, student.current_plan_id)} | Seat {data.seats.find((seat) => seat.id === student.current_seat_id)?.seat_number || "None"}</Text>
+              <Text className="text-xl font-bold text-slate-950">{student.name}</Text>
+              <Text className="mt-1.5 text-base text-slate-500">{student.phone || "No phone"}</Text>
+              <Text className="mt-1 text-base text-slate-500">{planName(data.plans, student.current_plan_id)} | Seat {data.seats.find((seat) => seat.id === student.current_seat_id)?.seat_number || "None"}</Text>
             </View>
-            <Text className={`self-start rounded-lg px-2 py-1 text-xs font-bold ${student.is_active ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"}`}>{student.is_active ? "ACTIVE" : "OFF"}</Text>
+            <Text className={`self-start rounded-xl px-3 py-1.5 text-sm font-bold ${student.is_active ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"}`}>{student.is_active ? "ACTIVE" : "OFF"}</Text>
           </View>
-          <View className="mt-3 flex-row gap-2">
-            <TouchableOpacity onPress={() => openPayment(student)} className="rounded-lg bg-indigo-600 px-3 py-2"><Text className="text-sm font-semibold text-white">Payment</Text></TouchableOpacity>
-            <TouchableOpacity onPress={() => save(() => api.toggleStudentActive(student.id, audit), "students")} className="rounded-lg border border-slate-200 px-3 py-2"><Text className="text-sm font-semibold text-slate-700">Toggle</Text></TouchableOpacity>
+          <View className="mt-4 flex-row gap-3">
+            <TouchableOpacity onPress={() => openPayment(student)} className="rounded-xl bg-indigo-600 px-4 py-2.5"><Text className="text-base font-semibold text-white">Payment</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => save(() => api.toggleStudentActive(student.id, audit), "students")} className="rounded-xl border border-slate-200 px-4 py-2.5"><Text className="text-base font-semibold text-slate-700">Toggle</Text></TouchableOpacity>
           </View>
         </Card>
       ))}
@@ -413,11 +438,11 @@ export default function Dashboard() {
         {data.seats.map((seat) => {
           const occupied = seat.status === "occupied";
           return (
-            <Card key={seat.id} className={`mb-3 w-[48%] ${occupied ? "bg-indigo-50" : "bg-white"}`}>
-              <Text className="text-xl font-bold text-slate-950">{seat.seat_number}</Text>
-              <Text className={`mt-1 text-xs font-bold uppercase ${occupied ? "text-indigo-600" : "text-emerald-600"}`}>{occupied ? "Occupied" : "Available"}</Text>
-              <Text className="mt-2 text-xs text-slate-500" numberOfLines={2}>{occupied ? studentName(data.students, seat.current_student_id) : "Ready"}</Text>
-              <TouchableOpacity onPress={() => (occupied ? releaseSeat(seat) : openAssign(seat))} className={`mt-3 rounded-lg px-3 py-2 ${occupied ? "bg-rose-600" : "bg-indigo-600"}`}><Text className="text-center text-sm font-semibold text-white">{occupied ? "Release" : "Assign"}</Text></TouchableOpacity>
+            <Card key={seat.id} className={`mb-4 w-[48%] ${occupied ? "bg-indigo-50" : "bg-white"}`}>
+              <Text className="text-2xl font-bold text-slate-950">{seat.seat_number}</Text>
+              <Text className={`mt-1.5 text-sm font-bold uppercase ${occupied ? "text-indigo-600" : "text-emerald-600"}`}>{occupied ? "Occupied" : "Available"}</Text>
+              <Text className="mt-2 text-sm text-slate-500" numberOfLines={2}>{occupied ? studentName(data.students, seat.current_student_id) : "Ready"}</Text>
+              <TouchableOpacity onPress={() => (occupied ? releaseSeat(seat) : openAssign(seat))} className={`mt-4 rounded-xl px-4 py-2.5 ${occupied ? "bg-rose-600" : "bg-indigo-600"}`}><Text className="text-center text-base font-semibold text-white">{occupied ? "Release" : "Assign"}</Text></TouchableOpacity>
             </Card>
           );
         })}
@@ -429,14 +454,14 @@ export default function Dashboard() {
     <>
       <Header title="Payments" subtitle="Fees, validity, and collection modes." action="Log" onAction={() => setModal("payment")} />
       {data.payments.map((payment) => (
-        <Card key={payment.id} className="mb-3">
+        <Card key={payment.id} className="mb-4">
           <View className="flex-row justify-between gap-3">
             <View className="flex-1">
-              <Text className="font-bold text-slate-950">{studentName(data.students, payment.student_id)}</Text>
-              <Text className="mt-1 text-sm text-slate-500">{planName(data.plans, payment.plan_id)} | {payment.payment_mode || "upi"}</Text>
-              <Text className="mt-1 text-xs text-slate-400">Valid {payment.valid_from || "-"} to {payment.valid_until || "-"}</Text>
+              <Text className="text-lg font-bold text-slate-950">{studentName(data.students, payment.student_id)}</Text>
+              <Text className="mt-1.5 text-base text-slate-500">{planName(data.plans, payment.plan_id)} | {payment.payment_mode || "upi"}</Text>
+              <Text className="mt-1 text-sm text-slate-400">Valid {payment.valid_from || "-"} to {payment.valid_until || "-"}</Text>
             </View>
-            <Text className="text-lg font-bold text-slate-950">{money(payment.amount_paid)}</Text>
+            <Text className="text-xl font-bold text-slate-950">{money(payment.amount_paid)}</Text>
           </View>
         </Card>
       ))}
@@ -449,15 +474,15 @@ export default function Dashboard() {
       {[...expired, ...renewals].map((student) => {
         const days = diffDays(student.renewal_date);
         return (
-          <Card key={student.id} className="mb-3">
+          <Card key={student.id} className="mb-4">
             <View className="flex-row justify-between gap-3">
               <View className="flex-1">
-                <Text className="font-bold text-slate-950">{student.name}</Text>
-                <Text className="mt-1 text-sm text-slate-500">Renewal: {student.renewal_date || "-"}</Text>
+                <Text className="text-lg font-bold text-slate-950">{student.name}</Text>
+                <Text className="mt-1.5 text-base text-slate-500">Renewal: {student.renewal_date || "-"}</Text>
               </View>
-              <Text className={`font-bold ${days < 0 ? "text-rose-600" : "text-amber-600"}`}>{days < 0 ? `${Math.abs(days)}d late` : `${days}d left`}</Text>
+              <Text className={`text-lg font-bold ${days < 0 ? "text-rose-600" : "text-amber-600"}`}>{days < 0 ? `${Math.abs(days)}d late` : `${days}d left`}</Text>
             </View>
-            <TouchableOpacity onPress={() => openPayment(student)} className="mt-3 rounded-lg bg-indigo-600 px-3 py-2"><Text className="text-center text-sm font-semibold text-white">Renew Now</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => openPayment(student)} className="mt-4 rounded-xl bg-indigo-600 px-4 py-2.5"><Text className="text-center text-base font-semibold text-white">Renew Now</Text></TouchableOpacity>
           </Card>
         );
       })}
@@ -479,31 +504,31 @@ export default function Dashboard() {
   const admissionsView = (
     <>
       <Header title="Admissions" subtitle="Student intake and QR enrollment support." action="Add" onAction={() => setModal("student")} />
-      <Card><QrCode size={30} color="#4f46e5" /><Text className="mt-3 text-lg font-bold text-slate-950">QR Enrollment</Text><Text className="mt-2 text-sm leading-5 text-slate-500">Use the web dashboard for printable QR forms. Mobile can create admissions instantly.</Text></Card>
-      <View style={{ columnGap: statGap }} className="mt-4 flex-row flex-wrap"><Stat style={statCardStyle} compact={compactStats} label="Admissions" value={data.students.length} icon={Users2} tone="bg-blue-50" /><Stat style={statCardStyle} compact={compactStats} label="Reg Pending" value={data.students.filter((s) => !s.registration_paid).length} icon={Bell} tone="bg-rose-50" /></View>
+      <Card><QrCode size={34} color="#4f46e5" /><Text className="mt-3 text-xl font-bold text-slate-950">QR Enrollment</Text><Text className="mt-2 text-base leading-6 text-slate-500">Use the web dashboard for printable QR forms. Mobile can create admissions instantly.</Text></Card>
+      <View style={{ columnGap: statGap }} className="mt-5 flex-row flex-wrap"><Stat style={statCardStyle} compact={compactStats} label="Admissions" value={data.students.length} icon={Users2} tone="bg-blue-50" /><Stat style={statCardStyle} compact={compactStats} label="Reg Pending" value={data.students.filter((s) => !s.registration_paid).length} icon={Bell} tone="bg-rose-50" /></View>
     </>
   );
 
   const historyView = (
     <>
       <Header title="History" subtitle="Recent student, seat, fee, and settings activity." />
-      {data.history.map((entry) => <Card key={entry.id} className="mb-3"><Text className="text-sm font-bold uppercase text-indigo-600">{entry.object_type || "activity"} | {entry.action || "update"}</Text><Text className="mt-1 text-sm text-slate-500">{entry.actor_role || "Admin"} changed {entry.object_id || "record"}</Text><Text className="mt-1 text-xs text-slate-400">{entry.created_at || ""}</Text></Card>)}
+      {data.history.map((entry) => <Card key={entry.id} className="mb-4"><Text className="text-base font-bold uppercase text-indigo-600">{entry.object_type || "activity"} | {entry.action || "update"}</Text><Text className="mt-1.5 text-base text-slate-500">{entry.actor_role || "Admin"} changed {entry.object_id || "record"}</Text><Text className="mt-1 text-sm text-slate-400">{entry.created_at || ""}</Text></Card>)}
     </>
   );
 
   const expensesView = (
     <>
       <Header title="Expenses" subtitle="Operating expenses and payment modes." action="Add" onAction={() => setModal("expense")} />
-      {data.expenses.map((expense) => <Card key={expense.id} className="mb-3"><View className="flex-row justify-between gap-3"><View className="flex-1"><Text className="font-bold text-slate-950">{expense.title}</Text><Text className="mt-1 text-sm text-slate-500">{expense.category || "misc"} | {expense.paid_via || "cash"}</Text><Text className="mt-1 text-xs text-slate-400">{expense.expense_date}</Text></View><Text className="text-lg font-bold text-rose-600">{money(expense.amount)}</Text></View></Card>)}
+      {data.expenses.map((expense) => <Card key={expense.id} className="mb-4"><View className="flex-row justify-between gap-3"><View className="flex-1"><Text className="text-lg font-bold text-slate-950">{expense.title}</Text><Text className="mt-1.5 text-base text-slate-500">{expense.category || "misc"} | {expense.paid_via || "cash"}</Text><Text className="mt-1 text-sm text-slate-400">{expense.expense_date}</Text></View><Text className="text-xl font-bold text-rose-600">{money(expense.amount)}</Text></View></Card>)}
     </>
   );
 
   const settingsView = (
     <>
       <Header title="Settings" subtitle="Plans, roles, and account actions." action="Plan" onAction={() => setModal("plan")} />
-      <Card className="mb-3"><Text className="text-base font-bold text-slate-950">Fee Plans</Text>{data.plans.map((plan) => <View key={plan.id} className="mt-3 flex-row justify-between border-b border-slate-100 pb-3"><View><Text className="font-semibold text-slate-900">{plan.name}</Text><Text className="text-sm text-slate-500">{plan.duration_days} days</Text></View><Text className="font-bold text-slate-950">{money(plan.price)}</Text></View>)}</Card>
-      <Card className="mb-3"><Text className="text-base font-bold text-slate-950">Roles</Text>{data.roles.length ? data.roles.map((role) => <Text key={role.id} className="mt-2 text-sm font-semibold text-slate-700">{role.name}</Text>) : <Text className="mt-2 text-sm text-slate-500">No custom roles.</Text>}</Card>
-      <TouchableOpacity onPress={logout} className="flex-row items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-3"><LogOut size={18} color="white" /><Text className="text-base font-bold text-white">Log Out</Text></TouchableOpacity>
+      <Card className="mb-4"><Text className="text-lg font-bold text-slate-950">Fee Plans</Text>{data.plans.map((plan) => <View key={plan.id} className="mt-4 flex-row justify-between border-b border-slate-100 pb-4"><View><Text className="text-base font-semibold text-slate-900">{plan.name}</Text><Text className="text-base text-slate-500">{plan.duration_days} days</Text></View><Text className="text-lg font-bold text-slate-950">{money(plan.price)}</Text></View>)}</Card>
+      <Card className="mb-4"><Text className="text-lg font-bold text-slate-950">Roles</Text>{data.roles.length ? data.roles.map((role) => <Text key={role.id} className="mt-2.5 text-base font-semibold text-slate-700">{role.name}</Text>) : <Text className="mt-2.5 text-base text-slate-500">No custom roles.</Text>}</Card>
+      <TouchableOpacity onPress={logout} className="flex-row items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3.5"><LogOut size={20} color="white" /><Text className="text-lg font-bold text-white">Log Out</Text></TouchableOpacity>
     </>
   );
 
@@ -522,24 +547,87 @@ export default function Dashboard() {
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50">
-      <View className="border-b border-slate-100 bg-white px-4 py-3">
-        <View className="flex-row items-center justify-between">
-          <View className="flex-row items-center gap-3"><View className="h-11 w-11 items-center justify-center rounded-lg bg-indigo-600"><Home size={22} color="white" /></View><View><Text className="text-lg font-bold text-slate-950">Abhyasika</Text><Text className="text-xs text-slate-500">{admin?.email || "Mobile admin"}</Text></View></View>
-          <TouchableOpacity onPress={refresh} className="rounded-lg bg-slate-100 p-3"><RefreshCcw size={18} color="#475569" /></TouchableOpacity>
-        </View>
-        {error ? <Text className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</Text> : null}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-4">
-          <View className="flex-row gap-2">
+      {/* Animated Sidebar Drawer */}
+      <View
+        style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 100 }}
+        pointerEvents={drawerOpen ? "auto" : "none"}
+      >
+        <Animated.View
+          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.5)", opacity: overlayOpacity }}
+        >
+          <Pressable style={{ flex: 1 }} onPress={() => setDrawerOpen(false)} />
+        </Animated.View>
+        <Animated.View
+          style={{
+            height: "100%",
+            width: 320,
+            backgroundColor: "white",
+            paddingTop: 56,
+            transform: [{ translateX: drawerTranslateX }],
+            elevation: 10,
+            shadowColor: "#000",
+            shadowOffset: { width: 2, height: 0 },
+            shadowOpacity: 0.25,
+            shadowRadius: 10,
+          }}
+        >
+          <View className="px-6 pb-6 border-b border-slate-100">
+            <View className="flex-row items-center gap-3">
+              <View className="h-12 w-12 items-center justify-center rounded-xl bg-indigo-600">
+                <Home size={24} color="white" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-xl font-bold text-slate-950">Abhyasika</Text>
+                <Text className="text-sm text-slate-500" numberOfLines={1}>{admin?.email || "Mobile admin"}</Text>
+              </View>
+            </View>
+          </View>
+          <ScrollView className="flex-1 px-3 pt-4" showsVerticalScrollIndicator={false}>
             {VIEW_DEFINITIONS.map((item) => {
               const Icon = icons[item.icon] || LayoutDashboard;
               const selected = active === item.id;
-              return <TouchableOpacity key={item.id} onPress={() => setActive(item.id)} className={`flex-row items-center gap-2 rounded-lg border px-3 py-2 ${selected ? "border-indigo-600 bg-indigo-600" : "border-slate-200 bg-white"}`}><Icon size={16} color={selected ? "white" : "#64748b"} /><Text className={`text-sm font-semibold ${selected ? "text-white" : "text-slate-600"}`}>{item.label}</Text></TouchableOpacity>;
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  onPress={() => { setActive(item.id); setDrawerOpen(false); }}
+                  className={`mb-1.5 flex-row items-center gap-3.5 rounded-xl px-5 py-3.5 ${selected ? "bg-indigo-600" : "bg-transparent"}`}
+                >
+                  <Icon size={22} color={selected ? "white" : "#64748b"} />
+                  <Text className={`text-base font-semibold ${selected ? "text-white" : "text-slate-700"}`}>{item.label}</Text>
+                  {selected ? <View className="ml-auto h-2.5 w-2.5 rounded-full bg-white" /> : null}
+                </TouchableOpacity>
+              );
             })}
+          </ScrollView>
+          <View className="border-t border-slate-100 px-4 pb-10 pt-4">
+            <TouchableOpacity
+              onPress={() => { setDrawerOpen(false); logout(); }}
+              className="flex-row items-center gap-3 rounded-xl bg-slate-950 px-5 py-3.5"
+            >
+              <LogOut size={20} color="white" />
+              <Text className="text-base font-bold text-white">Log Out</Text>
+            </TouchableOpacity>
           </View>
-        </ScrollView>
+        </Animated.View>
       </View>
 
-      <ScrollView className="flex-1 px-4 pt-5" contentContainerStyle={{ paddingBottom: 36 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>{views[active]}</ScrollView>
+      {/* Header */}
+      <View className="border-b border-slate-100 bg-white px-5 py-4">
+        <View className="flex-row items-center justify-between">
+          <View className="flex-row items-center gap-3">
+            <TouchableOpacity onPress={() => setDrawerOpen(true)} className="rounded-xl bg-slate-100 p-3">
+              <Menu size={24} color="#334155" />
+            </TouchableOpacity>
+            <View>
+              <Text className="text-xl font-bold text-slate-950">{VIEW_DEFINITIONS.find(v => v.id === active)?.label || "Dashboard"}</Text>
+              <Text className="text-sm text-slate-500">{admin?.email || "Mobile admin"}</Text>
+            </View>
+          </View>
+        </View>
+        {error ? <Text className="mt-3 rounded-xl bg-rose-50 px-4 py-2.5 text-base text-rose-600">{error}</Text> : null}
+      </View>
+
+      <ScrollView className="flex-1 px-5 pt-6" contentContainerStyle={{ paddingBottom: 40 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>{views[active]}</ScrollView>
 
       <Sheet title="New Student" visible={modal === "student"} onClose={() => setModal("")}>
         <Input label="Name" value={studentForm.name} onChangeText={(name) => setStudentForm((p) => ({ ...p, name }))} placeholder="Student name" />
@@ -547,7 +635,7 @@ export default function Dashboard() {
         <Input label="Email" value={studentForm.email} onChangeText={(email) => setStudentForm((p) => ({ ...p, email }))} placeholder="Optional email" keyboardType="email-address" />
         <Input label="Join Date" value={studentForm.join_date} onChangeText={(join_date) => setStudentForm((p) => ({ ...p, join_date }))} placeholder="YYYY-MM-DD" />
         <ChipPicker label="Plan" items={data.plans} value={studentForm.current_plan_id} onChange={(current_plan_id) => setStudentForm((p) => ({ ...p, current_plan_id }))} getLabel={(plan) => plan.name} getValue={(plan) => plan.id} />
-        <TouchableOpacity disabled={busy} onPress={submitStudent} className="mt-2 rounded-lg bg-indigo-600 px-4 py-3"><Text className="text-center text-base font-bold text-white">{busy ? "Saving..." : "Save Student"}</Text></TouchableOpacity>
+        <TouchableOpacity disabled={busy} onPress={submitStudent} className="mt-3 rounded-xl bg-indigo-600 px-5 py-3.5"><Text className="text-center text-lg font-bold text-white">{busy ? "Saving..." : "Save Student"}</Text></TouchableOpacity>
       </Sheet>
 
       <Sheet title="Log Payment" visible={modal === "payment"} onClose={() => setModal("")}>
@@ -556,7 +644,7 @@ export default function Dashboard() {
         <Input label="Amount" value={paymentForm.amount_paid} onChangeText={(amount_paid) => setPaymentForm((p) => ({ ...p, amount_paid }))} placeholder="Amount paid" keyboardType="numeric" />
         <Input label="Valid From" value={paymentForm.valid_from} onChangeText={(valid_from) => setPaymentForm((p) => ({ ...p, valid_from }))} placeholder="YYYY-MM-DD" />
         <ChipPicker label="Mode" items={[{ label: "UPI", value: "upi" }, { label: "Cash", value: "cash" }, { label: "Card", value: "card" }, { label: "Bank", value: "bank" }]} value={paymentForm.payment_mode} onChange={(payment_mode) => setPaymentForm((p) => ({ ...p, payment_mode }))} getLabel={(item) => item.label} getValue={(item) => item.value} />
-        <TouchableOpacity disabled={busy} onPress={submitPayment} className="mt-2 rounded-lg bg-indigo-600 px-4 py-3"><Text className="text-center text-base font-bold text-white">{busy ? "Saving..." : "Save Payment"}</Text></TouchableOpacity>
+        <TouchableOpacity disabled={busy} onPress={submitPayment} className="mt-3 rounded-xl bg-indigo-600 px-5 py-3.5"><Text className="text-center text-lg font-bold text-white">{busy ? "Saving..." : "Save Payment"}</Text></TouchableOpacity>
       </Sheet>
 
       <Sheet title="Add Expense" visible={modal === "expense"} onClose={() => setModal("")}>
@@ -564,25 +652,25 @@ export default function Dashboard() {
         <Input label="Amount" value={expenseForm.amount} onChangeText={(amount) => setExpenseForm((p) => ({ ...p, amount }))} placeholder="Amount" keyboardType="numeric" />
         <Input label="Date" value={expenseForm.expense_date} onChangeText={(expense_date) => setExpenseForm((p) => ({ ...p, expense_date }))} placeholder="YYYY-MM-DD" />
         <Input label="Category" value={expenseForm.category} onChangeText={(category) => setExpenseForm((p) => ({ ...p, category }))} placeholder="misc" />
-        <TouchableOpacity disabled={busy} onPress={submitExpense} className="mt-2 rounded-lg bg-indigo-600 px-4 py-3"><Text className="text-center text-base font-bold text-white">{busy ? "Saving..." : "Save Expense"}</Text></TouchableOpacity>
+        <TouchableOpacity disabled={busy} onPress={submitExpense} className="mt-3 rounded-xl bg-indigo-600 px-5 py-3.5"><Text className="text-center text-lg font-bold text-white">{busy ? "Saving..." : "Save Expense"}</Text></TouchableOpacity>
       </Sheet>
 
       <Sheet title="Add Seat" visible={modal === "seat"} onClose={() => setModal("")}>
         <Input label="Seat Number" value={seatForm.seat_number} onChangeText={(seat_number) => setSeatForm({ seat_number })} placeholder="A1" />
-        <TouchableOpacity disabled={busy} onPress={submitSeat} className="mt-2 rounded-lg bg-indigo-600 px-4 py-3"><Text className="text-center text-base font-bold text-white">{busy ? "Saving..." : "Save Seat"}</Text></TouchableOpacity>
+        <TouchableOpacity disabled={busy} onPress={submitSeat} className="mt-3 rounded-xl bg-indigo-600 px-5 py-3.5"><Text className="text-center text-lg font-bold text-white">{busy ? "Saving..." : "Save Seat"}</Text></TouchableOpacity>
       </Sheet>
 
       <Sheet title="Assign Seat" visible={modal === "assign"} onClose={() => setModal("")}>
         <ChipPicker label="Seat" items={availableSeats} value={assignForm.seatId} onChange={(seatId) => setAssignForm((p) => ({ ...p, seatId }))} getLabel={(seat) => seat.seat_number} getValue={(seat) => seat.id} />
         <ChipPicker label="Student" items={availableStudents} value={assignForm.studentId} onChange={(studentId) => setAssignForm((p) => ({ ...p, studentId }))} getLabel={(student) => student.name} getValue={(student) => student.id} />
-        <TouchableOpacity disabled={busy} onPress={submitAssign} className="mt-2 rounded-lg bg-indigo-600 px-4 py-3"><Text className="text-center text-base font-bold text-white">{busy ? "Saving..." : "Assign Seat"}</Text></TouchableOpacity>
+        <TouchableOpacity disabled={busy} onPress={submitAssign} className="mt-3 rounded-xl bg-indigo-600 px-5 py-3.5"><Text className="text-center text-lg font-bold text-white">{busy ? "Saving..." : "Assign Seat"}</Text></TouchableOpacity>
       </Sheet>
 
       <Sheet title="New Fee Plan" visible={modal === "plan"} onClose={() => setModal("")}>
         <Input label="Plan Name" value={planForm.name} onChangeText={(name) => setPlanForm((p) => ({ ...p, name }))} placeholder="Monthly" />
         <Input label="Price" value={planForm.price} onChangeText={(price) => setPlanForm((p) => ({ ...p, price }))} placeholder="0" keyboardType="numeric" />
         <Input label="Duration Days" value={planForm.duration_days} onChangeText={(duration_days) => setPlanForm((p) => ({ ...p, duration_days }))} placeholder="30" keyboardType="numeric" />
-        <TouchableOpacity disabled={busy} onPress={submitPlan} className="mt-2 rounded-lg bg-indigo-600 px-4 py-3"><Text className="text-center text-base font-bold text-white">{busy ? "Saving..." : "Save Plan"}</Text></TouchableOpacity>
+        <TouchableOpacity disabled={busy} onPress={submitPlan} className="mt-3 rounded-xl bg-indigo-600 px-5 py-3.5"><Text className="text-center text-lg font-bold text-white">{busy ? "Saving..." : "Save Plan"}</Text></TouchableOpacity>
       </Sheet>
     </SafeAreaView>
   );
