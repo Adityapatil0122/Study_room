@@ -6,6 +6,7 @@ import {
     KeyboardAvoidingView,
     Platform,
     ScrollView,
+    Image,
 } from "react-native";
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
@@ -95,6 +96,11 @@ export default function StudentRegisterScreen() {
                     </TouchableOpacity>
 
                     <View className="mb-6">
+                        <Image 
+                            source={require('../../assets/logo.png')} 
+                            className="w-24 h-24 mb-4" 
+                            resizeMode="contain" 
+                        />
                         <Text className="text-3xl font-bold text-gray-900">Create account</Text>
                         <Text className="text-gray-500 mt-1">
                             Register yourself to get started

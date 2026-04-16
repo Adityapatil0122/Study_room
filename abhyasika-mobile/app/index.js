@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity } from "react-native";
+import { View, Text, TouchableOpacity, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
@@ -11,10 +11,12 @@ export default function LandingScreen() {
             <StatusBar style="dark" />
             <View className="flex-1 justify-center px-8">
                 <View className="items-center mb-12">
-                    <View className="w-24 h-24 bg-blue-600 rounded-full items-center justify-center mb-4">
-                        <Text className="text-white text-4xl font-bold">A</Text>
-                    </View>
-                    <Text className="text-3xl font-bold text-gray-900">Abhyasika</Text>
+                    <Image 
+                        source={require('../assets/logo.png')} 
+                        className="w-32 h-32 mb-4" 
+                        resizeMode="contain" 
+                    />
+                    <Text className="text-3xl font-bold text-gray-900">Aardhya Abhyasika</Text>
                     <Text className="text-gray-500 mt-2 text-center">
                         Study room membership, made simple.
                     </Text>

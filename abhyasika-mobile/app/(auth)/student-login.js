@@ -6,6 +6,7 @@ import {
     KeyboardAvoidingView,
     Platform,
     ScrollView,
+    Image,
 } from "react-native";
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
@@ -46,9 +47,11 @@ export default function StudentLoginScreen() {
                     </TouchableOpacity>
 
                     <View className="items-center mb-10 mt-10">
-                        <View className="w-20 h-20 bg-indigo-600 rounded-full items-center justify-center mb-4">
-                            <Text className="text-white text-3xl font-bold">S</Text>
-                        </View>
+                        <Image 
+                            source={require('../../assets/logo.png')} 
+                            className="w-32 h-32 mb-4" 
+                            resizeMode="contain" 
+                        />
                         <Text className="text-3xl font-bold text-gray-900">Student Login</Text>
                         <Text className="text-gray-500 mt-2">Access your membership</Text>
                     </View>

@@ -5,6 +5,7 @@ import {
     TouchableOpacity,
     KeyboardAvoidingView,
     Platform,
+    Image,
 } from "react-native";
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
@@ -41,9 +42,11 @@ export default function AdminLoginScreen() {
                 </TouchableOpacity>
 
                 <View className="items-center mb-10">
-                    <View className="w-20 h-20 bg-blue-600 rounded-full items-center justify-center mb-4">
-                        <Text className="text-white text-3xl font-bold">A</Text>
-                    </View>
+                    <Image 
+                        source={require('../../assets/logo.png')} 
+                        className="w-32 h-32 mb-4" 
+                        resizeMode="contain" 
+                    />
                     <Text className="text-3xl font-bold text-gray-900">Admin Sign In</Text>
                     <Text className="text-gray-500 mt-2">Manage your workspace</Text>
                 </View>

@@ -27,6 +27,7 @@ import {
   Menu,
   Plus,
   QrCode,
+  RefreshCw,
   Search,
   Settings2,
   Users2,
@@ -207,6 +208,28 @@ export default function Dashboard() {
     }).start();
   }, [drawerOpen, drawerAnim]);
 
+  // Sync spin animation
+  const syncAnim = useRef(new Animated.Value(0)).current;
+  const spinSync = () => {
+    syncAnim.setValue(0);
+    Animated.timing(syncAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+    }).start();
+  };
+  const syncRotate = syncAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+
+  const handleSync = async () => {
+    spinSync();
+    setRefreshing(true);
+    await load().catch((err) => setError(err.message || "Unable to refresh."));
+    setRefreshing(false);
+  };
+
   const drawerTranslateX = drawerAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [-320, 0],
@@ -242,6 +265,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     load().catch((err) => setError(err.message || "Unable to load workspace.")).finally(() => setLoading(false));
+
+    // Auto-sync every 30 seconds
+    const interval = setInterval(() => {
+      // Background sync, silently handle errors
+      load().catch(() => { });
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, [load]);
 
   useEffect(() => {
@@ -623,6 +654,15 @@ export default function Dashboard() {
               <Text className="text-sm text-slate-500">{admin?.email || "Mobile admin"}</Text>
             </View>
           </View>
+          <TouchableOpacity
+            onPress={handleSync}
+            disabled={refreshing}
+            className="rounded-xl bg-indigo-50 p-3"
+          >
+            <Animated.View style={{ transform: [{ rotate: syncRotate }] }}>
+              <RefreshCw size={22} color="#4f46e5" />
+            </Animated.View>
+          </TouchableOpacity>
         </View>
         {error ? <Text className="mt-3 rounded-xl bg-rose-50 px-4 py-2.5 text-base text-rose-600">{error}</Text> : null}
       </View>

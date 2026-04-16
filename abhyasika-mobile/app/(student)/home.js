@@ -5,6 +5,7 @@ import {
     TouchableOpacity,
     RefreshControl,
     ActivityIndicator,
+    Image,
 } from "react-native";
 import { useCallback, useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -57,11 +58,18 @@ export default function StudentHomeScreen() {
                 contentContainerStyle={{ padding: 16 }}
             >
                 <View className="flex-row justify-between items-center mb-6 mt-2">
-                    <View>
-                        <Text className="text-gray-500">Welcome back,</Text>
-                        <Text className="text-2xl font-bold text-gray-900">
-                            {student?.name ?? "Student"}
-                        </Text>
+                    <View className="flex-row items-center">
+                        <Image 
+                            source={require('../../assets/logo.png')} 
+                            className="w-12 h-12 rounded-full mr-3 border border-gray-200" 
+                            resizeMode="contain" 
+                        />
+                        <View>
+                            <Text className="text-gray-500">Welcome back,</Text>
+                            <Text className="text-2xl font-bold text-gray-900">
+                                {student?.name ?? "Student"}
+                            </Text>
+                        </View>
                     </View>
                     <TouchableOpacity
                         onPress={logout}
