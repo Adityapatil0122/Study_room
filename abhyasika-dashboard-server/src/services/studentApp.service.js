@@ -8,6 +8,7 @@ import {
   verifySignature,
   getPublicKeyId,
 } from "./razorpay.service.js";
+import { parseJson } from "../utils/data.js";
 
 const EDITABLE_FIELDS = [
   "name",
@@ -18,6 +19,70 @@ const EDITABLE_FIELDS = [
   "pincode",
   "preferred_shift",
 ];
+
+/**
+ * Calculate billing dates for a student payment.
+ *
+ * Calendar-cycle rule:
+ *   - If joining on the 1st → full fee, valid_until = last day of that month.
+ *   - Otherwise → prorated fee (days from join to end of month), valid_until = last day of that month.
+ *   - Subsequent renewals are always 1st–last of the next month at full fee.
+ *
+ * @param {string} joinDateStr  "YYYY-MM-DD"  (student's join_date or today for renewal)
+ * @param {number} monthlyFee
+ * @param {boolean} isRenewal   true = skip proration, use 1st of NEXT month
+ * @returns {{ valid_from: string, valid_until: string, amount: number, prorated: boolean }}
+ */
+function calcBillingDates(joinDateStr, monthlyFee, isRenewal = false) {
+  const fee = Number(monthlyFee);
+
+  if (isRenewal) {
+    // Next month, 1st → last
+    const today = new Date();
+    const year = today.getMonth() === 11 ? today.getFullYear() + 1 : today.getFullYear();
+    const month = (today.getMonth() + 1) % 12; // 0-indexed next month
+    const firstOfNext = new Date(year, month, 1);
+    const lastOfNext = new Date(year, month + 1, 0);
+    return {
+      valid_from: firstOfNext.toISOString().slice(0, 10),
+      valid_until: lastOfNext.toISOString().slice(0, 10),
+      amount: fee,
+      prorated: false,
+    };
+  }
+
+  // First payment — check join day
+  const join = new Date(joinDateStr);
+  const joinDay = join.getDate();
+  const joinYear = join.getFullYear();
+  const joinMonth = join.getMonth(); // 0-indexed
+
+  // Last day of join month
+  const lastOfMonth = new Date(joinYear, joinMonth + 1, 0);
+  const daysInMonth = lastOfMonth.getDate();
+
+  if (joinDay === 1) {
+    return {
+      valid_from: joinDateStr,
+      valid_until: lastOfMonth.toISOString().slice(0, 10),
+      amount: fee,
+      prorated: false,
+    };
+  }
+
+  // Prorate: inclusive days from joinDay to end of month
+  const daysFromJoin = daysInMonth - joinDay + 1;
+  const proratedAmount = Math.round(fee * daysFromJoin / daysInMonth);
+
+  return {
+    valid_from: joinDateStr,
+    valid_until: lastOfMonth.toISOString().slice(0, 10),
+    amount: proratedAmount,
+    prorated: true,
+    days_remaining_in_month: daysFromJoin,
+    days_in_month: daysInMonth,
+  };
+}
 
 function mapStudent(row) {
   if (!row) return null;
@@ -71,7 +136,7 @@ export async function listAvailablePlans(workspaceOwnerId) {
   return query(
     `SELECT id, name, price, duration_days, is_active
      FROM plans
-     WHERE workspace_owner_id = ? AND is_active = 1
+     WHERE workspace_owner_id = ? AND is_active = TRUE
      ORDER BY price ASC`,
     [workspaceOwnerId]
   );
@@ -105,6 +170,15 @@ export async function getSubscription(studentId, workspaceOwnerId) {
     daysRemaining = Math.ceil((renewal - today) / 86400000);
   }
 
+  // Check if there's a pending QR payment awaiting admin approval
+  const pendingQr = await queryOne(
+    `SELECT id, amount, valid_from, valid_until, created_at
+     FROM pending_payments
+     WHERE student_id = ? AND status = 'pending'
+     ORDER BY created_at DESC LIMIT 1`,
+    [studentId]
+  );
+
   return {
     plan,
     seat,
@@ -113,6 +187,15 @@ export async function getSubscription(studentId, workspaceOwnerId) {
     registration_paid: student.registration_paid,
     fee_plan_type: student.fee_plan_type,
     preferred_shift: student.preferred_shift,
+    pending_qr: pendingQr
+      ? {
+          id: pendingQr.id,
+          amount: pendingQr.amount,
+          valid_from: toDateString(pendingQr.valid_from),
+          valid_until: toDateString(pendingQr.valid_until),
+          submitted_at: pendingQr.created_at,
+        }
+      : null,
   };
 }
 
@@ -152,7 +235,7 @@ export async function listStudentPayments(studentId, workspaceOwnerId) {
 export async function createRazorpayOrderForStudent(
   studentId,
   workspaceOwnerId,
-  { plan_id }
+  { plan_id, is_renewal }
 ) {
   if (!plan_id) {
     throw new AppError("plan_id is required", 400);
@@ -164,12 +247,19 @@ export async function createRazorpayOrderForStudent(
   );
   if (!plan) throw new AppError("Plan not found", 404);
 
-  const amount = Number(plan.price);
-  if (!Number.isFinite(amount) || amount <= 0) {
+  const student = await getStudent(studentId, workspaceOwnerId);
+
+  const billing = calcBillingDates(
+    student.join_date ?? new Date().toISOString().slice(0, 10),
+    Number(plan.price),
+    Boolean(is_renewal)
+  );
+
+  if (!Number.isFinite(billing.amount) || billing.amount <= 0) {
     throw new AppError("Plan has an invalid price", 400);
   }
 
-  const amountPaise = Math.round(amount * 100);
+  const amountPaise = Math.round(billing.amount * 100);
   const receipt = `stu_${studentId.slice(0, 8)}_${Date.now()}`.slice(0, 40);
 
   const order = await createOrder({
@@ -188,10 +278,15 @@ export async function createRazorpayOrderForStudent(
     `
       INSERT INTO student_payments (
         id, workspace_owner_id, student_id, plan_id,
-        amount, currency, razorpay_order_id, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'created')
+        amount, currency, razorpay_order_id, status,
+        valid_from, valid_until
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'created', ?, ?)
     `,
-    [id, workspaceOwnerId, studentId, plan_id, amount, "INR", order.id]
+    [
+      id, workspaceOwnerId, studentId, plan_id,
+      billing.amount, "INR", order.id,
+      billing.valid_from, billing.valid_until,
+    ]
   );
 
   return {
@@ -200,10 +295,14 @@ export async function createRazorpayOrderForStudent(
     razorpay_key_id: getPublicKeyId(),
     amount: amountPaise,
     currency: order.currency ?? "INR",
+    valid_from: billing.valid_from,
+    valid_until: billing.valid_until,
+    prorated: billing.prorated,
+    days_remaining_in_month: billing.days_remaining_in_month ?? null,
     plan: {
       id: plan.id,
       name: plan.name,
-      price: amount,
+      price: Number(plan.price),
       duration_days: plan.duration_days,
     },
   };
@@ -257,6 +356,7 @@ export async function verifyRazorpayPaymentForStudent(
 
   // Record an admin-visible payment in the existing payments table, which
   // also updates the student's current_plan_id and renewal_date.
+  // Use the billing dates stored on the student_payments row (set during order creation).
   const { payment, student } = await createPayment(
     workspaceOwnerId,
     {
@@ -264,6 +364,8 @@ export async function verifyRazorpayPaymentForStudent(
       plan_id: pending.plan_id,
       amount_paid: Number(pending.amount),
       payment_mode: "razorpay",
+      valid_from: pending.valid_from ? toDateString(pending.valid_from) : undefined,
+      valid_until: pending.valid_until ? toDateString(pending.valid_until) : undefined,
       notes: `Razorpay order ${razorpay_order_id} / payment ${razorpay_payment_id}`,
     },
     { actor_id: studentId, actor_role: "Student" }
@@ -286,4 +388,99 @@ export async function verifyRazorpayPaymentForStudent(
     payment,
     student,
   };
+}
+
+/**
+ * Create a QR/offline UPI payment request that awaits admin approval.
+ */
+export async function createQrPaymentRequest(
+  studentId,
+  workspaceOwnerId,
+  { plan_id, is_renewal }
+) {
+  if (!plan_id) throw new AppError("plan_id is required", 400);
+
+  const plan = await queryOne(
+    `SELECT id, name, price, duration_days FROM plans WHERE id = ? AND workspace_owner_id = ? LIMIT 1`,
+    [plan_id, workspaceOwnerId]
+  );
+  if (!plan) throw new AppError("Plan not found", 404);
+
+  const student = await getStudent(studentId, workspaceOwnerId);
+
+  const billing = calcBillingDates(
+    student.join_date ?? new Date().toISOString().slice(0, 10),
+    Number(plan.price),
+    Boolean(is_renewal)
+  );
+
+  const id = randomUUID();
+  await query(
+    `INSERT INTO pending_payments
+       (id, workspace_owner_id, student_id, plan_id, amount, valid_from, valid_until, payment_mode, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'qr', 'pending')`,
+    [id, workspaceOwnerId, studentId, plan_id, billing.amount, billing.valid_from, billing.valid_until]
+  );
+
+  // Read UPI QR URL from admin settings (if configured)
+  const settings = await queryOne(
+    "SELECT preferences FROM admin_settings WHERE admin_id = ? LIMIT 1",
+    [workspaceOwnerId]
+  );
+  const prefs = parseJson(settings?.preferences, {});
+
+  return {
+    id,
+    amount: billing.amount,
+    valid_from: billing.valid_from,
+    valid_until: billing.valid_until,
+    prorated: billing.prorated,
+    upi_qr_url: prefs.upiQrUrl ?? null,
+    plan: { id: plan.id, name: plan.name, price: Number(plan.price) },
+  };
+}
+
+/**
+ * List available seats (only status=available) for student seat selection.
+ */
+export async function listSeatsForStudent(workspaceOwnerId) {
+  const rows = await query(
+    `SELECT id, seat_number FROM seats
+     WHERE workspace_owner_id = ? AND status = 'available'
+     ORDER BY seat_number ASC`,
+    [workspaceOwnerId]
+  );
+  return rows;
+}
+
+/**
+ * Student selects a specific seat after their payment is confirmed.
+ */
+export async function selectSeatForStudent(studentId, workspaceOwnerId, seatId) {
+  if (!seatId) throw new AppError("seat_id is required", 400);
+
+  const student = await getStudent(studentId, workspaceOwnerId);
+
+  // Must have an active paid plan
+  if (!student.renewal_date) {
+    throw new AppError("You must have an active plan before selecting a seat", 400);
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const renewal = new Date(student.renewal_date);
+  renewal.setHours(0, 0, 0, 0);
+  if (renewal < today) {
+    throw new AppError("Your plan has expired. Please renew before selecting a seat", 400);
+  }
+
+  if (student.current_seat_id) {
+    throw new AppError("You already have a seat assigned", 400);
+  }
+
+  // Delegate to existing seats service
+  const { assignSeat } = await import("./seats.service.js");
+  return assignSeat(workspaceOwnerId, seatId, studentId, {
+    actor_id: studentId,
+    actor_role: "Student",
+  });
 }

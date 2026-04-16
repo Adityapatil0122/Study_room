@@ -2,6 +2,9 @@ import {
   createPayment,
   importPayments,
   listPayments,
+  listPendingPayments,
+  approvePendingPayment,
+  rejectPendingPayment,
 } from "../services/payments.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
@@ -32,4 +35,21 @@ export const postImportPayments = asyncHandler(async (req, res) => {
     req.body?.audit ?? null
   );
   res.status(201).json({ data });
+});
+
+export const listPending = asyncHandler(async (req, res) => {
+  const data = await listPendingPayments(req.auth.workspaceOwnerId);
+  res.json({ data });
+});
+
+export const approvePending = asyncHandler(async (req, res) => {
+  const audit = { actor_id: req.auth.adminId, actor_role: req.auth.role ?? "Admin" };
+  const data = await approvePendingPayment(req.auth.workspaceOwnerId, req.params.id, audit);
+  res.json({ data });
+});
+
+export const rejectPending = asyncHandler(async (req, res) => {
+  const audit = { actor_id: req.auth.adminId, actor_role: req.auth.role ?? "Admin" };
+  const data = await rejectPendingPayment(req.auth.workspaceOwnerId, req.params.id, audit);
+  res.json({ data });
 });

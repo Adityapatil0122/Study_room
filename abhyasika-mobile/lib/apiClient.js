@@ -334,5 +334,23 @@ export function createApiClient() {
         body: payload,
       });
     },
+
+    async requestQrPayment(payload) {
+      return request("/student/payments/request-qr", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
+    async listAvailableSeats() {
+      return request("/student/seats");
+    },
+
+    async selectSeat(seatId) {
+      return request("/student/seats/select", {
+        method: "POST",
+        body: { seat_id: seatId },
+      });
+    },
   };
 }

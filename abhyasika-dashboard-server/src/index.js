@@ -8,11 +8,24 @@ let server;
 function getStartupHelp(error) {
   if (error?.code === "ECONNREFUSED") {
     return [
-      `Could not connect to MySQL at ${config.mysqlHost}:${config.mysqlPort}.`,
-      "Start your MySQL service before running the API.",
-      "If you use XAMPP, open the XAMPP Control Panel and start MySQL.",
-      "If you use the Windows service, start the MySQL80 service from Services or an elevated terminal.",
-      "Then verify the credentials in .env match your local MySQL setup.",
+      `Could not connect to PostgreSQL at ${config.pgHost}:${config.pgPort}.`,
+      "Start your PostgreSQL service before running the API.",
+      "On Windows, start the postgresql-x64 service from Services, or launch it via pgAdmin.",
+      `Also make sure the database "${config.pgDatabase}" exists and that the credentials in .env match your local Postgres setup.`,
+    ].join(" ");
+  }
+
+  if (error?.code === "28P01") {
+    return [
+      `Postgres rejected the credentials for user "${config.pgUser}".`,
+      "Check PG_USER and PG_PASSWORD in your .env file.",
+    ].join(" ");
+  }
+
+  if (error?.code === "3D000") {
+    return [
+      `Postgres database "${config.pgDatabase}" does not exist.`,
+      "Create it in pgAdmin (or via psql: CREATE DATABASE study_room;) and try again.",
     ].join(" ");
   }
 

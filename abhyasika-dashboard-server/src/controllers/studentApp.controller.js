@@ -7,6 +7,9 @@ import {
   listStudentPayments,
   createRazorpayOrderForStudent,
   verifyRazorpayPaymentForStudent,
+  createQrPaymentRequest,
+  listSeatsForStudent,
+  selectSeatForStudent,
 } from "../services/studentApp.service.js";
 
 export const getMyProfile = asyncHandler(async (req, res) => {
@@ -56,5 +59,24 @@ export const postVerifyPayment = asyncHandler(async (req, res) => {
     workspaceOwnerId,
     req.body ?? {}
   );
+  res.json({ data });
+});
+
+export const postRequestQrPayment = asyncHandler(async (req, res) => {
+  const { studentId, workspaceOwnerId } = req.studentAuth;
+  const data = await createQrPaymentRequest(studentId, workspaceOwnerId, req.body ?? {});
+  res.status(201).json({ data });
+});
+
+export const getAvailableSeats = asyncHandler(async (req, res) => {
+  const { workspaceOwnerId } = req.studentAuth;
+  const data = await listSeatsForStudent(workspaceOwnerId);
+  res.json({ data });
+});
+
+export const postSelectSeat = asyncHandler(async (req, res) => {
+  const { studentId, workspaceOwnerId } = req.studentAuth;
+  const { seat_id } = req.body ?? {};
+  const data = await selectSeatForStudent(studentId, workspaceOwnerId, seat_id);
   res.json({ data });
 });

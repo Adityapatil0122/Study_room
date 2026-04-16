@@ -7,8 +7,10 @@ import {
     Platform,
     ScrollView,
     Image,
+    Animated,
+    Easing,
 } from "react-native";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -20,6 +22,16 @@ const GENDERS = ["Male", "Female", "Other"];
 export default function StudentRegisterScreen() {
     const { studentRegister, authLoading, authError } = useAuth();
     const router = useRouter();
+
+    const fadeY  = useRef(new Animated.Value(24)).current;
+    const fadeOp = useRef(new Animated.Value(0)).current;
+    useEffect(() => {
+        Animated.parallel([
+            Animated.timing(fadeY, { toValue: 0, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+            Animated.timing(fadeOp, { toValue: 1, duration: 400, useNativeDriver: true }),
+        ]).start();
+    }, []);
+
     const [form, setForm] = useState({
         name: "",
         email: "",
@@ -78,177 +90,132 @@ export default function StudentRegisterScreen() {
     };
 
     return (
-        <SafeAreaView className="flex-1 bg-white">
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
             <StatusBar style="dark" />
             <KeyboardAvoidingView
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
-                className="flex-1"
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
             >
                 <ScrollView
-                    contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
+                    contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 48 }}
                     keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
                 >
-                    <TouchableOpacity
-                        onPress={() => router.back()}
-                        className="mt-4 mb-4 p-2"
-                    >
-                        <Text className="text-indigo-600 text-base">← Back</Text>
-                    </TouchableOpacity>
+                    <Animated.View style={{ opacity: fadeOp, transform: [{ translateY: fadeY }] }}>
+                        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16, marginBottom: 8, padding: 4 }}>
+                            <Text style={{ color: "#4f46e5", fontSize: 15 }}>← Back</Text>
+                        </TouchableOpacity>
 
-                    <View className="mb-6">
-                        <Image 
-                            source={require('../../assets/logo.png')} 
-                            className="w-24 h-24 mb-4" 
-                            resizeMode="contain" 
-                        />
-                        <Text className="text-3xl font-bold text-gray-900">Create account</Text>
-                        <Text className="text-gray-500 mt-1">
-                            Register yourself to get started
-                        </Text>
-                    </View>
+                        <View style={{ marginBottom: 24 }}>
+                            <Image source={require("../../assets/logo.png")} style={{ width: 80, height: 80, marginBottom: 14 }} resizeMode="contain" />
+                            <Text style={{ fontSize: 26, fontWeight: "800", color: "#111827" }}>Create account</Text>
+                            <Text style={{ color: "#6b7280", marginTop: 4, fontSize: 14 }}>Register yourself to get started</Text>
+                        </View>
 
-                    <View className="space-y-4">
                         <Field label="Full Name">
-                            <TextInput
-                                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-900 bg-gray-50"
-                                placeholder="John Doe"
-                                value={form.name}
-                                onChangeText={set("name")}
-                            />
+                            <TextInput style={inputStyle} placeholder="John Doe" placeholderTextColor="#9ca3af" value={form.name} onChangeText={set("name")} returnKeyType="next" />
                         </Field>
 
                         <Field label="Email">
-                            <TextInput
-                                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-900 bg-gray-50"
-                                placeholder="you@example.com"
-                                value={form.email}
-                                onChangeText={set("email")}
-                                keyboardType="email-address"
-                                autoCapitalize="none"
-                            />
+                            <TextInput style={inputStyle} placeholder="you@example.com" placeholderTextColor="#9ca3af" value={form.email} onChangeText={set("email")} keyboardType="email-address" autoCapitalize="none" returnKeyType="next" />
                         </Field>
 
                         <Field label="Phone Number">
-                            <TextInput
-                                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-900 bg-gray-50"
-                                placeholder="9876543210"
-                                value={form.phone}
-                                onChangeText={set("phone")}
-                                keyboardType="number-pad"
-                                maxLength={10}
-                            />
+                            <TextInput style={inputStyle} placeholder="9876543210" placeholderTextColor="#9ca3af" value={form.phone} onChangeText={set("phone")} keyboardType="number-pad" maxLength={10} />
                         </Field>
 
                         <Field label="Password">
-                            <TextInput
-                                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-900 bg-gray-50"
-                                placeholder="At least 6 characters"
-                                value={form.password}
-                                onChangeText={set("password")}
-                                secureTextEntry
-                            />
+                            <TextInput style={inputStyle} placeholder="At least 6 characters" placeholderTextColor="#9ca3af" value={form.password} onChangeText={set("password")} secureTextEntry returnKeyType="next" />
                         </Field>
 
                         <Field label="Confirm Password">
-                            <TextInput
-                                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-900 bg-gray-50"
-                                placeholder="Re-enter password"
-                                value={form.confirmPassword}
-                                onChangeText={set("confirmPassword")}
-                                secureTextEntry
-                            />
+                            <TextInput style={inputStyle} placeholder="Re-enter password" placeholderTextColor="#9ca3af" value={form.confirmPassword} onChangeText={set("confirmPassword")} secureTextEntry returnKeyType="done" />
                         </Field>
 
                         <Field label="Gender">
-                            <View className="flex-row flex-wrap gap-2">
+                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                                 {GENDERS.map((g) => (
                                     <TouchableOpacity
                                         key={g}
                                         onPress={() => set("gender")(g)}
-                                        className={`px-4 py-2 rounded-full border ${
-                                            form.gender === g
-                                                ? "bg-indigo-600 border-indigo-600"
-                                                : "bg-white border-gray-300"
-                                        }`}
+                                        activeOpacity={0.8}
+                                        style={{
+                                            paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5,
+                                            backgroundColor: form.gender === g ? "#4f46e5" : "#fff",
+                                            borderColor: form.gender === g ? "#4f46e5" : "#d1d5db",
+                                        }}
                                     >
-                                        <Text
-                                            className={
-                                                form.gender === g ? "text-white" : "text-gray-700"
-                                            }
-                                        >
-                                            {g}
-                                        </Text>
+                                        <Text style={{ color: form.gender === g ? "#fff" : "#374151", fontWeight: "500" }}>{g}</Text>
                                     </TouchableOpacity>
                                 ))}
                             </View>
                         </Field>
 
                         <Field label="Preferred Shift">
-                            <View className="flex-row flex-wrap gap-2">
+                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                                 {SHIFTS.map((s) => (
                                     <TouchableOpacity
                                         key={s}
                                         onPress={() => set("preferred_shift")(s)}
-                                        className={`px-4 py-2 rounded-full border ${
-                                            form.preferred_shift === s
-                                                ? "bg-indigo-600 border-indigo-600"
-                                                : "bg-white border-gray-300"
-                                        }`}
+                                        activeOpacity={0.8}
+                                        style={{
+                                            paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5,
+                                            backgroundColor: form.preferred_shift === s ? "#4f46e5" : "#fff",
+                                            borderColor: form.preferred_shift === s ? "#4f46e5" : "#d1d5db",
+                                        }}
                                     >
-                                        <Text
-                                            className={
-                                                form.preferred_shift === s
-                                                    ? "text-white"
-                                                    : "text-gray-700"
-                                            }
-                                        >
-                                            {s}
-                                        </Text>
+                                        <Text style={{ color: form.preferred_shift === s ? "#fff" : "#374151", fontWeight: "500" }}>{s}</Text>
                                     </TouchableOpacity>
                                 ))}
                             </View>
                         </Field>
 
                         {(localError || authError) ? (
-                            <Text className="text-red-500 text-sm text-center">
+                            <Text style={{ color: "#ef4444", fontSize: 13, textAlign: "center", marginVertical: 8 }}>
                                 {localError || authError}
                             </Text>
                         ) : null}
 
                         <TouchableOpacity
-                            className={`w-full bg-indigo-600 rounded-lg py-4 items-center mt-4 ${
-                                authLoading ? "opacity-70" : ""
-                            }`}
+                            style={[{ backgroundColor: "#4f46e5", borderRadius: 12, paddingVertical: 15, alignItems: "center", marginTop: 20 }, authLoading && { opacity: 0.7 }]}
                             onPress={handleRegister}
                             disabled={authLoading}
+                            activeOpacity={0.85}
                         >
-                            <Text className="text-white font-bold text-lg">
-                                {authLoading ? "Creating account..." : "Create Account"}
+                            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 17 }}>
+                                {authLoading ? "Creating account…" : "Create Account"}
                             </Text>
                         </TouchableOpacity>
 
-                        <TouchableOpacity
-                            onPress={() => router.replace("/(auth)/student-login")}
-                            className="mt-2 items-center"
-                        >
-                            <Text className="text-gray-600 text-sm">
+                        <TouchableOpacity onPress={() => router.replace("/(auth)/student-login")} style={{ marginTop: 16, alignItems: "center" }}>
+                            <Text style={{ color: "#6b7280", fontSize: 14 }}>
                                 Already registered?{" "}
-                                <Text className="text-indigo-600 font-semibold">
-                                    Sign in
-                                </Text>
+                                <Text style={{ color: "#4f46e5", fontWeight: "600" }}>Sign in</Text>
                             </Text>
                         </TouchableOpacity>
-                    </View>
+                    </Animated.View>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
 
+const inputStyle = {
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    fontSize: 15,
+    color: "#111827",
+    backgroundColor: "#f9fafb",
+};
+
 function Field({ label, children }) {
     return (
-        <View>
-            <Text className="text-gray-700 mb-2 font-medium">{label}</Text>
+        <View style={{ marginBottom: 16 }}>
+            <Text style={{ color: "#374151", marginBottom: 6, fontWeight: "600", fontSize: 14 }}>{label}</Text>
             {children}
         </View>
     );

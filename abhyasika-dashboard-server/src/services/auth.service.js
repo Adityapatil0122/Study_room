@@ -105,7 +105,7 @@ export async function findAdminById(id) {
 
 export async function getDefaultWorkspaceOwner() {
   const admin = await findAdmin(
-    "WHERE a.is_owner = 1 AND a.is_active = 1 ORDER BY a.created_at ASC",
+    "WHERE a.is_owner = TRUE AND a.is_active = TRUE ORDER BY a.created_at ASC",
     []
   );
 

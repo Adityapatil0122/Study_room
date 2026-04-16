@@ -281,6 +281,18 @@ export function createApiClient() {
       });
     },
 
+    async listPendingPayments() {
+      return request("/payments/pending");
+    },
+
+    async approvePendingPayment(id) {
+      return request(`/payments/pending/${id}/approve`, { method: "POST" });
+    },
+
+    async rejectPendingPayment(id) {
+      return request(`/payments/pending/${id}/reject`, { method: "POST" });
+    },
+
     async importExpenses(rows, audit) {
       return request("/expenses/import", {
         method: "POST",

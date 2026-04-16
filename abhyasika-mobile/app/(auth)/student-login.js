@@ -7,8 +7,10 @@ import {
     Platform,
     ScrollView,
     Image,
+    Animated,
+    Easing,
 } from "react-native";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -20,6 +22,16 @@ export default function StudentLoginScreen() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
 
+    const fadeY  = useRef(new Animated.Value(30)).current;
+    const fadeOp = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        Animated.parallel([
+            Animated.timing(fadeY, { toValue: 0, duration: 420, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+            Animated.timing(fadeOp, { toValue: 1, duration: 420, useNativeDriver: true }),
+        ]).start();
+    }, []);
+
     const handleLogin = async () => {
         try {
             await studentLogin(email, password);
@@ -29,87 +41,119 @@ export default function StudentLoginScreen() {
     };
 
     return (
-        <SafeAreaView className="flex-1 bg-white">
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
             <StatusBar style="dark" />
             <KeyboardAvoidingView
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
-                className="flex-1"
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
             >
                 <ScrollView
                     contentContainerStyle={{ flexGrow: 1, justifyContent: "center", paddingHorizontal: 32 }}
                     keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
                 >
+                    {/* Back */}
                     <TouchableOpacity
                         onPress={() => router.back()}
-                        className="absolute top-4 left-4 p-2"
+                        style={{ position: "absolute", top: 16, left: 0, padding: 8 }}
                     >
-                        <Text className="text-indigo-600 text-base">← Back</Text>
+                        <Text style={{ color: "#4f46e5", fontSize: 15 }}>← Back</Text>
                     </TouchableOpacity>
 
-                    <View className="items-center mb-10 mt-10">
-                        <Image 
-                            source={require('../../assets/logo.png')} 
-                            className="w-32 h-32 mb-4" 
-                            resizeMode="contain" 
-                        />
-                        <Text className="text-3xl font-bold text-gray-900">Student Login</Text>
-                        <Text className="text-gray-500 mt-2">Access your membership</Text>
-                    </View>
+                    <Animated.View style={{ opacity: fadeOp, transform: [{ translateY: fadeY }] }}>
+                        {/* Logo + heading */}
+                        <View style={{ alignItems: "center", marginBottom: 36, marginTop: 60 }}>
+                            <Image
+                                source={require("../../assets/logo.png")}
+                                style={{ width: 100, height: 100, marginBottom: 16 }}
+                                resizeMode="contain"
+                            />
+                            <Text style={{ fontSize: 26, fontWeight: "800", color: "#111827" }}>Student Login</Text>
+                            <Text style={{ color: "#6b7280", marginTop: 6, fontSize: 14 }}>Access your membership</Text>
+                        </View>
 
-                    <View className="space-y-4">
-                        <View>
-                            <Text className="text-gray-700 mb-2 font-medium">Email</Text>
+                        {/* Email */}
+                        <View style={{ marginBottom: 14 }}>
+                            <Text style={labelStyle}>Email</Text>
                             <TextInput
-                                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-900 bg-gray-50"
+                                style={inputStyle}
                                 placeholder="you@example.com"
+                                placeholderTextColor="#9ca3af"
                                 value={email}
                                 onChangeText={setEmail}
                                 autoCapitalize="none"
                                 keyboardType="email-address"
+                                returnKeyType="next"
                             />
                         </View>
 
-                        <View>
-                            <Text className="text-gray-700 mb-2 font-medium">Password</Text>
+                        {/* Password */}
+                        <View style={{ marginBottom: 6 }}>
+                            <Text style={labelStyle}>Password</Text>
                             <TextInput
-                                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-900 bg-gray-50"
+                                style={inputStyle}
                                 placeholder="••••••••"
+                                placeholderTextColor="#9ca3af"
                                 value={password}
                                 onChangeText={setPassword}
                                 secureTextEntry
+                                returnKeyType="done"
+                                onSubmitEditing={handleLogin}
                             />
                         </View>
 
                         {authError ? (
-                            <Text className="text-red-500 text-sm text-center">{authError}</Text>
+                            <Text style={{ color: "#ef4444", fontSize: 13, textAlign: "center", marginVertical: 8 }}>
+                                {authError}
+                            </Text>
                         ) : null}
 
+                        {/* Sign in button */}
                         <TouchableOpacity
-                            className={`w-full bg-indigo-600 rounded-lg py-4 items-center ${
-                                authLoading ? "opacity-70" : ""
-                            }`}
+                            style={[btnStyle, authLoading && { opacity: 0.7 }, { marginTop: 18 }]}
                             onPress={handleLogin}
                             disabled={authLoading}
+                            activeOpacity={0.85}
                         >
-                            <Text className="text-white font-bold text-lg">
-                                {authLoading ? "Signing in..." : "Sign In"}
+                            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 17 }}>
+                                {authLoading ? "Signing in…" : "Sign In"}
                             </Text>
                         </TouchableOpacity>
 
+                        {/* Register link */}
                         <TouchableOpacity
                             onPress={() => router.push("/(auth)/student-register")}
-                            className="mt-3 items-center"
+                            style={{ marginTop: 20, marginBottom: 32, alignItems: "center" }}
                         >
-                            <Text className="text-gray-600 text-sm">
+                            <Text style={{ color: "#6b7280", fontSize: 14 }}>
                                 New student?{" "}
-                                <Text className="text-indigo-600 font-semibold">
-                                    Create an account
-                                </Text>
+                                <Text style={{ color: "#4f46e5", fontWeight: "600" }}>Create an account</Text>
                             </Text>
                         </TouchableOpacity>
-                    </View>
+                    </Animated.View>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
+
+const labelStyle = { color: "#374151", marginBottom: 6, fontWeight: "600", fontSize: 14 };
+
+const inputStyle = {
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    fontSize: 15,
+    color: "#111827",
+    backgroundColor: "#f9fafb",
+};
+
+const btnStyle = {
+    backgroundColor: "#4f46e5",
+    borderRadius: 12,
+    paddingVertical: 15,
+    alignItems: "center",
+};

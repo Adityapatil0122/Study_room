@@ -40,12 +40,12 @@ export async function listStudents(workspaceOwnerId, { search, isActive } = {}) 
 
   if (typeof isActive === "boolean") {
     filters.push("is_active = ?");
-    params.push(isActive ? 1 : 0);
+    params.push(isActive);
   }
 
   if (search) {
     const pattern = `%${search}%`;
-    filters.push("(name LIKE ? OR phone LIKE ? OR email LIKE ? OR aadhaar LIKE ?)");
+    filters.push("(name ILIKE ? OR phone ILIKE ? OR email ILIKE ? OR aadhaar ILIKE ?)");
     params.push(pattern, pattern, pattern, pattern);
   }
 
@@ -116,9 +116,9 @@ export async function createStudent(workspaceOwnerId, payload, audit = null, con
       payload.fee_plan_type ?? "monthly",
       payload.fee_cycle ?? "calendar",
       payload.fee_plan_type === "limited" ? payload.limited_days ?? null : null,
-      payload.registration_paid ? 1 : 0,
+      Boolean(payload.registration_paid),
       payload.join_date ?? today(),
-      payload.is_active === false ? 0 : 1,
+      payload.is_active !== false,
       payload.current_plan_id ?? null,
       payload.current_seat_id ?? null,
       payload.renewal_date ?? null,
@@ -178,9 +178,9 @@ export async function updateStudent(studentId, workspaceOwnerId, updates, audit 
         ? null
         : updates.limited_days,
     registration_paid:
-      updates.registration_paid === undefined ? undefined : updates.registration_paid ? 1 : 0,
+      updates.registration_paid === undefined ? undefined : Boolean(updates.registration_paid),
     join_date: updates.join_date,
-    is_active: updates.is_active === undefined ? undefined : updates.is_active ? 1 : 0,
+    is_active: updates.is_active === undefined ? undefined : Boolean(updates.is_active),
     current_plan_id: updates.current_plan_id,
     current_seat_id: updates.current_seat_id,
     renewal_date: updates.renewal_date,
@@ -227,7 +227,7 @@ export async function updateStudent(studentId, workspaceOwnerId, updates, audit 
 
 export async function toggleStudentActive(studentId, workspaceOwnerId, audit = null, connection) {
   const student = await getStudentOrThrow(studentId, workspaceOwnerId, connection);
-  const nextValue = toBoolean(student.is_active) ? 0 : 1;
+  const nextValue = !toBoolean(student.is_active);
 
   await query(
     "UPDATE students SET is_active = ? WHERE id = ? AND workspace_owner_id = ?",
@@ -245,7 +245,7 @@ export async function toggleStudentActive(studentId, workspaceOwnerId, audit = n
       actorRole: audit?.actor_role,
       metadata: {
         previous_active: toBoolean(student.is_active),
-        is_active: Boolean(nextValue),
+        is_active: nextValue,
       },
     },
     connection

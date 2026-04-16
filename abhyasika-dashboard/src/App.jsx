@@ -78,6 +78,7 @@ function App() {
   const [roles, setRoles] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [expenseCategories, setExpenseCategories] = useState([]);
+  const [pendingPayments, setPendingPayments] = useState([]);
   const [branding, setBranding] = useState({
     logoUrl: "/images/abhyasika-logo.png",
     logoPath: "",
@@ -483,6 +484,7 @@ const notificationRef = useRef(null);
           paymentData,
           expenseData,
           categoryData,
+          pendingData,
         ] =
           await Promise.all([
             api.listPlans(),
@@ -491,6 +493,7 @@ const notificationRef = useRef(null);
             api.listPayments(),
             api.listExpenses(),
             api.listExpenseCategories ? api.listExpenseCategories() : [],
+            api.listPendingPayments ? api.listPendingPayments() : [],
           ]);
         if (!mounted) return;
         setPlans(sortPlans(planData));
@@ -499,6 +502,7 @@ const notificationRef = useRef(null);
         setPayments(paymentData);
         setExpenses(expenseData);
         setExpenseCategories(categoryData || []);
+        setPendingPayments(pendingData || []);
         setError("");
       } catch (err) {
         if (!mounted) return;
@@ -807,6 +811,38 @@ const notificationRef = useRef(null);
       closeModal();
     } catch (err) {
       const message = err.message ?? "Failed to record payment.";
+      setError(message);
+      showToast(message, "error");
+    }
+  };
+
+  const handleApprovePendingPayment = async (pendingId) => {
+    try {
+      setError("");
+      const { payment, student } = await api.approvePendingPayment(pendingId);
+      setPayments((prev) => [payment, ...prev]);
+      if (student) {
+        setStudents((prev) =>
+          prev.map((item) => (item.id === student.id ? student : item))
+        );
+      }
+      setPendingPayments((prev) => prev.filter((item) => item.id !== pendingId));
+      showToast("Payment approved successfully.");
+    } catch (err) {
+      const message = err.message ?? "Failed to approve payment.";
+      setError(message);
+      showToast(message, "error");
+    }
+  };
+
+  const handleRejectPendingPayment = async (pendingId) => {
+    try {
+      setError("");
+      await api.rejectPendingPayment(pendingId);
+      setPendingPayments((prev) => prev.filter((item) => item.id !== pendingId));
+      showToast("Payment request rejected.");
+    } catch (err) {
+      const message = err.message ?? "Failed to reject payment.";
       setError(message);
       showToast(message, "error");
     }
@@ -1210,6 +1246,9 @@ const notificationRef = useRef(null);
             onFiltersChange={setPaymentFilters}
             onOpenModal={(type, payload = null) => openModal(type, payload)}
             roles={roles}
+            pendingPayments={pendingPayments}
+            onApprovePending={handleApprovePendingPayment}
+            onRejectPending={handleRejectPendingPayment}
           />
         )}
         {canAccessView("renewals") && activeView === "renewals" && (

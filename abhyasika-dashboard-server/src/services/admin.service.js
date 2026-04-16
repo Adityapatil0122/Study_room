@@ -191,7 +191,7 @@ export async function createTeamMemberAccount({
           is_owner,
           is_active,
           invite_status
-        ) VALUES (?, ?, ?, ?, ?, ?, 0, 1, 'active')
+        ) VALUES (?, ?, ?, ?, ?, ?, FALSE, TRUE, 'active')
       `,
       [
         userId,

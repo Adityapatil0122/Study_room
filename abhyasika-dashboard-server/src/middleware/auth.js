@@ -13,19 +13,25 @@ export async function requireAuth(req, _res, next) {
     : null;
 
   if (!token) {
-    throw new AppError("Unauthorized", 401);
+    return next(new AppError("Unauthorized", 401));
   }
 
   let payload;
   try {
     payload = verifyAuthToken(token);
   } catch {
-    throw new AppError("Unauthorized", 401);
+    return next(new AppError("Unauthorized", 401));
   }
 
-  const admin = await findAdminById(payload.sub);
+  let admin;
+  try {
+    admin = await findAdminById(payload.sub);
+  } catch (err) {
+    return next(err);
+  }
+
   if (!admin || !admin.is_active) {
-    throw new AppError("Unauthorized", 401);
+    return next(new AppError("Unauthorized", 401));
   }
 
   req.token = token;

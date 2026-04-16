@@ -27,9 +27,9 @@ export async function upsertAdminSettings(adminId, preferences) {
       `
         INSERT INTO admin_settings (admin_id, preferences)
         VALUES (?, ?)
-        ON DUPLICATE KEY UPDATE
-          preferences = VALUES(preferences),
-          updated_at = CURRENT_TIMESTAMP
+        ON CONFLICT (admin_id) DO UPDATE
+          SET preferences = EXCLUDED.preferences,
+              updated_at = CURRENT_TIMESTAMP
       `,
       [adminId, JSON.stringify(preferences ?? {})]
     );

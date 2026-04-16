@@ -63,7 +63,7 @@ export async function createPlan(workspaceOwnerId, payload, audit, connection) {
         is_active
       ) VALUES (?, ?, ?, ?, ?, ?)
     `,
-    [id, workspaceOwnerId, name, amount, duration, payload.is_active === false ? 0 : 1],
+    [id, workspaceOwnerId, name, amount, duration, payload.is_active !== false],
     connection
   );
 
@@ -138,7 +138,7 @@ export async function updatePlan(planId, workspaceOwnerId, updates, audit, conne
   }
 
   if (updates.is_active !== undefined) {
-    patch.is_active = updates.is_active ? 1 : 0;
+    patch.is_active = Boolean(updates.is_active);
   }
 
   const { clause, values } = buildUpdateClause(patch);

@@ -91,16 +91,64 @@ export default function StudentHomeScreen() {
 
                         <SubscriptionCard subscription={subscription} />
 
+                        {/* Pending QR payment badge */}
+                        {subscription?.pending_qr ? (
+                            <View className="bg-amber-50 border border-amber-300 rounded-xl p-4 mt-4">
+                                <View className="flex-row items-center mb-1">
+                                    <Text className="text-amber-700 font-bold text-sm">
+                                        ⏳ Payment Pending Approval
+                                    </Text>
+                                </View>
+                                <Text className="text-amber-600 text-xs">
+                                    ₹{Number(subscription.pending_qr.amount).toLocaleString("en-IN")} for{" "}
+                                    {subscription.pending_qr.valid_from} – {subscription.pending_qr.valid_until}
+                                </Text>
+                                <Text className="text-amber-500 text-xs mt-1">
+                                    Submitted on {subscription.pending_qr.submitted_at
+                                        ? new Date(subscription.pending_qr.submitted_at).toLocaleDateString("en-IN")
+                                        : "—"}. The admin will approve shortly.
+                                </Text>
+                            </View>
+                        ) : null}
+
+                        {/* Select Seat button — shown when paid but no seat */}
+                        {subscription?.plan && !subscription?.seat ? (
+                            <TouchableOpacity
+                                onPress={() => router.push("/(student)/seat-select")}
+                                className="bg-emerald-600 rounded-xl p-5 mt-4 flex-row items-center justify-between"
+                            >
+                                <View>
+                                    <Text className="text-white font-bold text-lg">
+                                        Select Your Seat →
+                                    </Text>
+                                    <Text className="text-emerald-100 text-sm mt-1">
+                                        Pick your spot in the library
+                                    </Text>
+                                </View>
+                                <Text className="text-white text-3xl">⊞</Text>
+                            </TouchableOpacity>
+                        ) : null}
+
+                        {/* No active plan warning */}
+                        {!subscription?.plan && !subscription?.pending_qr ? (
+                            <View className="bg-rose-50 border border-rose-200 rounded-xl p-4 mt-4">
+                                <Text className="text-rose-700 font-bold text-sm mb-1">No Active Plan</Text>
+                                <Text className="text-rose-600 text-xs">
+                                    You don't have an active plan. Make a payment to get started.
+                                </Text>
+                            </View>
+                        ) : null}
+
                         <TouchableOpacity
                             onPress={() => router.push("/(student)/pay")}
                             className="bg-indigo-600 rounded-xl p-5 mt-4 flex-row items-center justify-between"
                         >
                             <View>
                                 <Text className="text-white font-bold text-lg">
-                                    Make a Payment
+                                    {subscription?.plan ? "Renew Plan" : "Make a Payment"}
                                 </Text>
                                 <Text className="text-indigo-100 text-sm mt-1">
-                                    Renew or pay via Razorpay
+                                    Pay online or via UPI QR
                                 </Text>
                             </View>
                             <Text className="text-white text-3xl">→</Text>
@@ -179,7 +227,7 @@ function SubscriptionCard({ subscription }) {
                 </View>
                 <View>
                     <Text className="text-xs text-gray-500">Seat</Text>
-                    <Text className="text-gray-900 font-semibold">
+                    <Text className={`font-bold text-lg ${seat ? "text-emerald-600" : "text-gray-400"}`}>
                         {seat?.seat_number ?? "—"}
                     </Text>
                 </View>

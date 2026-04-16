@@ -10,7 +10,33 @@ function PaymentsView({
   onFiltersChange,
   onOpenModal,
   roles = [],
+  pendingPayments = [],
+  onApprovePending,
+  onRejectPending,
 }) {
+  const [activeTab, setActiveTab] = useState("payments"); // "payments" | "pending"
+  const [approvingId, setApprovingId] = useState(null);
+  const [rejectingId, setRejectingId] = useState(null);
+
+  const handleApprove = async (id) => {
+    if (!onApprovePending) return;
+    setApprovingId(id);
+    try {
+      await onApprovePending(id);
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
+  const handleReject = async (id) => {
+    if (!onRejectPending) return;
+    setRejectingId(id);
+    try {
+      await onRejectPending(id);
+    } finally {
+      setRejectingId(null);
+    }
+  };
   const dateKey = (value) => {
     if (!value) return "";
     const date = new Date(value);
@@ -210,6 +236,121 @@ function PaymentsView({
         </div>
       </div>
 
+      {/* Tab selector */}
+      <div className="flex gap-2 border-b border-slate-200 pb-0">
+        <button
+          type="button"
+          onClick={() => setActiveTab("payments")}
+          className={`-mb-px rounded-t-xl border border-b-0 px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "payments"
+              ? "border-slate-200 bg-white text-indigo-600"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          All Payments
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("pending")}
+          className={`-mb-px flex items-center gap-2 rounded-t-xl border border-b-0 px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "pending"
+              ? "border-slate-200 bg-white text-amber-600"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Pending QR
+          {pendingPayments.length > 0 && (
+            <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
+              {pendingPayments.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Pending QR payments panel */}
+      {activeTab === "pending" && (
+        <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+          {pendingPayments.length === 0 ? (
+            <div className="py-10 text-center text-sm text-slate-500">
+              No pending QR payment requests.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-100 text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Student</th>
+                    <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Plan</th>
+                    <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Amount</th>
+                    <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Valid Period</th>
+                    <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Submitted</th>
+                    <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide text-slate-500">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {pendingPayments.map((pending) => (
+                    <tr key={pending.id} className="hover:bg-amber-50/40">
+                      <td className="px-4 py-3 text-sm text-slate-800 font-semibold">
+                        {pending.student_name || "—"}
+                        <div className="text-xs font-normal text-slate-400">{pending.student_phone || ""}</div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-600">{pending.plan_name || "—"}</td>
+                      <td className="px-4 py-3 text-sm font-semibold text-emerald-600">
+                        ₹{Number(pending.amount).toLocaleString("en-IN")}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-600">
+                        {pending.valid_from} → {pending.valid_until}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500">
+                        {pending.created_at
+                          ? new Date(pending.created_at).toLocaleDateString("en-IN", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            disabled={approvingId === pending.id || rejectingId === pending.id}
+                            onClick={() => handleApprove(pending.id)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-50"
+                          >
+                            {approvingId === pending.id ? (
+                              <LucideIcon name="Loader2" className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <LucideIcon name="CheckCircle" className="h-3 w-3" />
+                            )}
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            disabled={approvingId === pending.id || rejectingId === pending.id}
+                            onClick={() => handleReject(pending.id)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50"
+                          >
+                            {rejectingId === pending.id ? (
+                              <LucideIcon name="Loader2" className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <LucideIcon name="XCircle" className="h-3 w-3" />
+                            )}
+                            Reject
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* All Payments table */}
+      {activeTab === "payments" && (
       <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-1 flex-col gap-3 sm:flex-row">
@@ -402,6 +543,7 @@ function PaymentsView({
           </table>
         </div>
       </div>
+      )}
     </div>
   );
 }

@@ -121,7 +121,7 @@ export async function createPayment(workspaceOwnerId, payload, audit = null) {
         validFrom,
         validUntil,
         payload.payment_mode ?? "upi",
-        payload.includes_registration ? 1 : 0,
+        Boolean(payload.includes_registration),
         payload.notes ?? null,
       ],
       connection
@@ -134,7 +134,7 @@ export async function createPayment(workspaceOwnerId, payload, audit = null) {
         WHERE id = ? AND workspace_owner_id = ?
       `,
       [
-        toBoolean(student.registration_paid) || Boolean(payload.includes_registration) ? 1 : 0,
+        toBoolean(student.registration_paid) || Boolean(payload.includes_registration),
         plan_id,
         validUntil,
         student_id,
@@ -206,4 +206,76 @@ export async function importPayments(workspaceOwnerId, rows, audit = null) {
     created.push(await createPayment(workspaceOwnerId, row, audit));
   }
   return created;
+}
+
+// ---------- Pending (QR) Payment Management ----------
+
+export async function listPendingPayments(workspaceOwnerId) {
+  const rows = await query(
+    `SELECT pp.*,
+            s.name  AS student_name,
+            s.phone AS student_phone,
+            p.name  AS plan_name
+     FROM pending_payments pp
+     JOIN students s ON s.id = pp.student_id
+     JOIN plans    p ON p.id = pp.plan_id
+     WHERE pp.workspace_owner_id = ? AND pp.status = 'pending'
+     ORDER BY pp.created_at DESC`,
+    [workspaceOwnerId]
+  );
+  return rows.map((row) => ({
+    ...row,
+    valid_from: toDateString(row.valid_from),
+    valid_until: toDateString(row.valid_until),
+  }));
+}
+
+export async function approvePendingPayment(workspaceOwnerId, pendingId, audit = null) {
+  const pending = await queryOne(
+    "SELECT * FROM pending_payments WHERE id = ? AND workspace_owner_id = ? LIMIT 1",
+    [pendingId, workspaceOwnerId]
+  );
+  if (!pending) throw new AppError("Pending payment not found", 404);
+  if (pending.status !== "pending") {
+    throw new AppError(`Payment is already ${pending.status}`, 400);
+  }
+
+  const { payment, student } = await createPayment(
+    workspaceOwnerId,
+    {
+      student_id: pending.student_id,
+      plan_id: pending.plan_id,
+      amount_paid: Number(pending.amount),
+      valid_from: toDateString(pending.valid_from),
+      valid_until: toDateString(pending.valid_until),
+      payment_mode: "qr",
+      notes: pending.notes ?? "Approved QR payment",
+    },
+    audit
+  );
+
+  await query(
+    "UPDATE pending_payments SET status = 'approved' WHERE id = ?",
+    [pendingId]
+  );
+
+  return { payment, student };
+}
+
+export async function rejectPendingPayment(workspaceOwnerId, pendingId, audit = null) {
+  const pending = await queryOne(
+    "SELECT * FROM pending_payments WHERE id = ? AND workspace_owner_id = ? LIMIT 1",
+    [pendingId, workspaceOwnerId]
+  );
+  if (!pending) throw new AppError("Pending payment not found", 404);
+  if (pending.status !== "pending") {
+    throw new AppError(`Payment is already ${pending.status}`, 400);
+  }
+
+  await query(
+    "UPDATE pending_payments SET status = 'rejected' WHERE id = ?",
+    [pendingId]
+  );
+
+  return { id: pendingId, status: "rejected" };
 }

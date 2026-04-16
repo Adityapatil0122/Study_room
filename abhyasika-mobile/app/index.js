@@ -1,48 +1,88 @@
-import { View, Text, TouchableOpacity, Image } from "react-native";
+import { View, Text, TouchableOpacity, Image, Animated, Easing } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
+import { useEffect, useRef } from "react";
 
 export default function LandingScreen() {
     const router = useRouter();
 
+    const logoScale    = useRef(new Animated.Value(0.7)).current;
+    const logoOpacity  = useRef(new Animated.Value(0)).current;
+    const titleY       = useRef(new Animated.Value(28)).current;
+    const titleOpacity = useRef(new Animated.Value(0)).current;
+    const btn1Y        = useRef(new Animated.Value(40)).current;
+    const btn1Opacity  = useRef(new Animated.Value(0)).current;
+    const btn2Y        = useRef(new Animated.Value(40)).current;
+    const btn2Opacity  = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        Animated.sequence([
+            Animated.parallel([
+                Animated.spring(logoScale, { toValue: 1, tension: 55, friction: 7, useNativeDriver: true }),
+                Animated.timing(logoOpacity, { toValue: 1, duration: 380, useNativeDriver: true }),
+            ]),
+            Animated.parallel([
+                Animated.timing(titleY, { toValue: 0, duration: 340, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+                Animated.timing(titleOpacity, { toValue: 1, duration: 340, useNativeDriver: true }),
+            ]),
+            Animated.stagger(110, [
+                Animated.parallel([
+                    Animated.timing(btn1Y, { toValue: 0, duration: 340, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+                    Animated.timing(btn1Opacity, { toValue: 1, duration: 340, useNativeDriver: true }),
+                ]),
+                Animated.parallel([
+                    Animated.timing(btn2Y, { toValue: 0, duration: 340, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+                    Animated.timing(btn2Opacity, { toValue: 1, duration: 340, useNativeDriver: true }),
+                ]),
+            ]),
+        ]).start();
+    }, []);
+
     return (
-        <SafeAreaView className="flex-1 bg-white">
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
             <StatusBar style="dark" />
-            <View className="flex-1 justify-center px-8">
-                <View className="items-center mb-12">
-                    <Image 
-                        source={require('../assets/logo.png')} 
-                        className="w-32 h-32 mb-4" 
-                        resizeMode="contain" 
-                    />
-                    <Text className="text-3xl font-bold text-gray-900">Aardhya Abhyasika</Text>
-                    <Text className="text-gray-500 mt-2 text-center">
+            <View style={{ flex: 1, justifyContent: "center", paddingHorizontal: 32 }}>
+
+                {/* Logo */}
+                <Animated.View style={{ alignItems: "center", marginBottom: 18, opacity: logoOpacity, transform: [{ scale: logoScale }] }}>
+                    <Image source={require("../assets/logo.png")} style={{ width: 120, height: 120 }} resizeMode="contain" />
+                </Animated.View>
+
+                {/* Title */}
+                <Animated.View style={{ alignItems: "center", marginBottom: 48, opacity: titleOpacity, transform: [{ translateY: titleY }] }}>
+                    <Text style={{ fontSize: 27, fontWeight: "800", color: "#111827", textAlign: "center" }}>
+                        Aardhya Abhyasika
+                    </Text>
+                    <Text style={{ color: "#6b7280", marginTop: 8, textAlign: "center", fontSize: 14 }}>
                         Study room membership, made simple.
                     </Text>
-                </View>
+                </Animated.View>
 
-                <View className="space-y-4">
+                {/* Student button */}
+                <Animated.View style={{ opacity: btn1Opacity, transform: [{ translateY: btn1Y }], marginBottom: 14 }}>
                     <TouchableOpacity
-                        className="w-full bg-blue-600 rounded-xl py-4 items-center"
+                        activeOpacity={0.85}
+                        style={{ backgroundColor: "#4f46e5", borderRadius: 14, paddingVertical: 16, alignItems: "center" }}
                         onPress={() => router.push("/(auth)/student-login")}
                     >
-                        <Text className="text-white font-bold text-lg">I'm a Student</Text>
-                        <Text className="text-blue-100 text-xs mt-1">
-                            Register, pay fees, view your plan
-                        </Text>
+                        <Text style={{ color: "#fff", fontWeight: "700", fontSize: 17 }}>I'm a Student</Text>
+                        <Text style={{ color: "#c7d2fe", fontSize: 12, marginTop: 3 }}>Register, pay fees, view your plan</Text>
                     </TouchableOpacity>
+                </Animated.View>
 
+                {/* Admin button */}
+                <Animated.View style={{ opacity: btn2Opacity, transform: [{ translateY: btn2Y }] }}>
                     <TouchableOpacity
-                        className="w-full border-2 border-gray-300 rounded-xl py-4 items-center mt-4"
+                        activeOpacity={0.85}
+                        style={{ borderWidth: 2, borderColor: "#d1d5db", borderRadius: 14, paddingVertical: 16, alignItems: "center" }}
                         onPress={() => router.push("/(auth)/admin-login")}
                     >
-                        <Text className="text-gray-900 font-bold text-lg">Admin Login</Text>
-                        <Text className="text-gray-500 text-xs mt-1">
-                            Manage students and payments
-                        </Text>
+                        <Text style={{ color: "#111827", fontWeight: "700", fontSize: 17 }}>Admin Login</Text>
+                        <Text style={{ color: "#6b7280", fontSize: 12, marginTop: 3 }}>Manage students and payments</Text>
                     </TouchableOpacity>
-                </View>
+                </Animated.View>
+
             </View>
         </SafeAreaView>
     );
