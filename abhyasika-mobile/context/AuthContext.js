@@ -16,16 +16,21 @@ import {
   clearStoredSession,
   getStoredSession,
   setStoredSession,
+  getStoredUserType,
+  setStoredUserType,
 } from "../lib/sessionStorage.js";
 
 const AuthContext = createContext(null);
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://10.0.2.2:4000/api";
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://10.0.2.2:4000/api";
 
 export function AuthProvider({ children }) {
   const api = useMemo(() => createApiClient(), []);
   const [session, setSession] = useState(null);
+  const [userType, setUserType] = useState(null); // "admin" | "student" | null
   const [admin, setAdmin] = useState(null);
+  const [student, setStudent] = useState(null);
   const [authInitializing, setAuthInitializing] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -40,20 +45,37 @@ export function AuthProvider({ children }) {
     })
   );
 
-  const syncFromSession = useCallback((nextSession) => {
+  const applySession = useCallback(async (nextSession, nextUserType) => {
     setSession(nextSession);
-    if (nextSession?.user) {
+    setUserType(nextUserType ?? null);
+
+    if (nextSession?.user && nextUserType === "admin") {
       const { user } = nextSession;
       setAdmin({
         email: user.email,
         name: user.user_metadata?.name ?? user.email,
         id: user.id,
       });
+      setStudent(null);
       setAuthError("");
-      setStoredSession(nextSession).catch(() => {});
+      await setStoredSession(nextSession).catch(() => {});
+      await setStoredUserType("admin").catch(() => {});
+    } else if (nextSession?.user && nextUserType === "student") {
+      const { user } = nextSession;
+      setStudent({
+        id: user.id,
+        email: user.email,
+        name: user.user_metadata?.name ?? user.email,
+        phone: user.user_metadata?.phone ?? null,
+      });
+      setAdmin(null);
+      setAuthError("");
+      await setStoredSession(nextSession).catch(() => {});
+      await setStoredUserType("student").catch(() => {});
     } else {
       setAdmin(null);
-      clearStoredSession().catch(() => {});
+      setStudent(null);
+      await clearStoredSession().catch(() => {});
     }
   }, []);
 
@@ -62,21 +84,28 @@ export function AuthProvider({ children }) {
 
     async function bootstrapSession() {
       const stored = await getStoredSession();
+      const storedType = await getStoredUserType();
+
       if (!stored?.access_token) {
         if (isMounted) {
-          syncFromSession(null);
+          await applySession(null, null);
           setAuthInitializing(false);
         }
         return;
       }
 
       try {
-        const refreshed = await api.getCurrentSession();
+        let refreshed;
+        if (storedType === "student") {
+          refreshed = await api.getStudentSession();
+        } else {
+          refreshed = await api.getCurrentSession();
+        }
         if (!isMounted) return;
-        syncFromSession(refreshed);
+        await applySession(refreshed, storedType ?? "admin");
       } catch {
         if (!isMounted) return;
-        syncFromSession(null);
+        await applySession(null, null);
       } finally {
         if (isMounted) {
           setAuthInitializing(false);
@@ -88,11 +117,26 @@ export function AuthProvider({ children }) {
     return () => {
       isMounted = false;
     };
-  }, [api, syncFromSession]);
+  }, [api, applySession]);
 
   useEffect(() => {
     let isMounted = true;
     async function loadRole() {
+      if (userType !== "admin") {
+        if (isMounted) {
+          setActiveRole(null);
+          setAllowedViews(ALL_VIEW_IDS);
+          setRolePermissions(
+            buildPermissionTemplate({
+              view: true,
+              add: true,
+              edit: true,
+              delete: true,
+            })
+          );
+        }
+        return;
+      }
       const roleId = session?.user?.user_metadata?.role_ids?.[0];
       if (!roleId) {
         if (isMounted) {
@@ -137,7 +181,7 @@ export function AuthProvider({ children }) {
     return () => {
       isMounted = false;
     };
-  }, [api, session?.user?.user_metadata?.role_ids]);
+  }, [api, userType, session?.user?.user_metadata?.role_ids]);
 
   const login = useCallback(
     async (email, password) => {
@@ -145,7 +189,7 @@ export function AuthProvider({ children }) {
       setAuthLoading(true);
       try {
         const nextSession = await api.login(email, password);
-        syncFromSession(nextSession);
+        await applySession(nextSession, "admin");
         return nextSession?.user ?? null;
       } catch (err) {
         const message =
@@ -156,13 +200,52 @@ export function AuthProvider({ children }) {
         setAuthLoading(false);
       }
     },
-    [api, syncFromSession]
+    [api, applySession]
+  );
+
+  const studentLogin = useCallback(
+    async (email, password) => {
+      setAuthError("");
+      setAuthLoading(true);
+      try {
+        const nextSession = await api.studentLogin(email, password);
+        await applySession(nextSession, "student");
+        return nextSession?.user ?? null;
+      } catch (err) {
+        const message =
+          err?.message ?? "Unable to sign in. Please check your credentials.";
+        setAuthError(message);
+        throw new Error(message);
+      } finally {
+        setAuthLoading(false);
+      }
+    },
+    [api, applySession]
+  );
+
+  const studentRegister = useCallback(
+    async (payload) => {
+      setAuthError("");
+      setAuthLoading(true);
+      try {
+        const nextSession = await api.studentRegister(payload);
+        await applySession(nextSession, "student");
+        return nextSession?.user ?? null;
+      } catch (err) {
+        const message = err?.message ?? "Unable to create your account.";
+        setAuthError(message);
+        throw new Error(message);
+      } finally {
+        setAuthLoading(false);
+      }
+    },
+    [api, applySession]
   );
 
   const logout = useCallback(async () => {
     setAuthError("");
-    syncFromSession(null);
-  }, [syncFromSession]);
+    await applySession(null, null);
+  }, [applySession]);
 
   const getAccessToken = useCallback(async () => {
     return session?.access_token ?? null;
@@ -170,20 +253,24 @@ export function AuthProvider({ children }) {
 
   const hasPermission = useCallback(
     (viewId, action = "view") => {
+      if (userType !== "admin") return false;
       if (!viewId) return false;
       const perms = rolePermissions?.[viewId];
       if (!perms) return false;
       return Boolean(perms[action]);
     },
-    [rolePermissions]
+    [rolePermissions, userType]
   );
 
   const value = useMemo(
     () => ({
       apiBaseUrl: API_BASE_URL,
+      api,
       session,
       token: session?.access_token ?? null,
+      userType,
       admin,
+      student,
       activeRole,
       allowedViews,
       rolePermissions,
@@ -192,13 +279,19 @@ export function AuthProvider({ children }) {
       authLoading,
       authError,
       login,
+      studentLogin,
+      studentRegister,
       logout,
       getAccessToken,
       hasPermission,
+      clearAuthError: () => setAuthError(""),
     }),
     [
+      api,
       session,
+      userType,
       admin,
+      student,
       activeRole,
       allowedViews,
       rolePermissions,
@@ -206,6 +299,8 @@ export function AuthProvider({ children }) {
       authLoading,
       authError,
       login,
+      studentLogin,
+      studentRegister,
       logout,
       getAccessToken,
       hasPermission,

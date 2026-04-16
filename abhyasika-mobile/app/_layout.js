@@ -6,21 +6,35 @@ import { View, ActivityIndicator } from "react-native";
 import "../global.css";
 
 const InitialLayout = () => {
-    const { session, authInitializing } = useAuth();
+    const { session, userType, authInitializing } = useAuth();
     const segments = useSegments();
     const router = useRouter();
 
     useEffect(() => {
         if (authInitializing) return;
 
-        const inAppGroup = segments[0] === "(app)";
+        const firstSegment = segments[0];
+        const inAdminGroup = firstSegment === "(app)";
+        const inStudentGroup = firstSegment === "(student)";
+        const inAuthGroup = firstSegment === "(auth)";
 
-        if (session && !inAppGroup) {
-            router.replace("/(app)/dashboard");
-        } else if (!session && inAppGroup) {
-            router.replace("/");
+        if (!session) {
+            if (inAdminGroup || inStudentGroup) {
+                router.replace("/");
+            }
+            return;
         }
-    }, [session, authInitializing, segments]);
+
+        if (userType === "admin") {
+            if (!inAdminGroup) {
+                router.replace("/(app)/dashboard");
+            }
+        } else if (userType === "student") {
+            if (!inStudentGroup) {
+                router.replace("/(student)/home");
+            }
+        }
+    }, [session, userType, authInitializing, segments]);
 
     if (authInitializing) {
         return (

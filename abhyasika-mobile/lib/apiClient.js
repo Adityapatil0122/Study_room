@@ -273,5 +273,66 @@ export function createApiClient() {
         body: entry,
       });
     },
+
+    // ---------- Student-facing endpoints ----------
+    async studentRegister(payload) {
+      const data = await request("/student-auth/register", {
+        method: "POST",
+        body: payload,
+        auth: false,
+      });
+      return data?.session ?? null;
+    },
+
+    async studentLogin(email, password) {
+      const data = await request("/student-auth/login", {
+        method: "POST",
+        body: { email, password },
+        auth: false,
+      });
+      return data?.session ?? null;
+    },
+
+    async getStudentSession() {
+      const data = await request("/student-auth/me");
+      return data?.session ?? null;
+    },
+
+    async getStudentProfile() {
+      return request("/student/profile");
+    },
+
+    async updateStudentProfile(updates) {
+      return request("/student/profile", {
+        method: "PUT",
+        body: updates,
+      });
+    },
+
+    async listStudentPlans() {
+      return request("/student/plans");
+    },
+
+    async getStudentSubscription() {
+      return request("/student/subscription");
+    },
+
+    async listMyPayments() {
+      return request("/student/payments");
+    },
+
+    async createPaymentOrder(payload) {
+      return request("/student/payments/create-order", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
+    async verifyPayment(payload) {
+      return request("/student/payments/verify", {
+        method: "POST",
+        body: payload,
+      });
+    },
   };
 }

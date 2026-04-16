@@ -17,6 +17,12 @@ export function signAuthToken(payload) {
   });
 }
 
+export function signStudentAuthToken(payload) {
+  return jwt.sign(payload, config.jwtSecret, {
+    expiresIn: config.studentJwtExpiresIn,
+  });
+}
+
 export function verifyAuthToken(token) {
   return jwt.verify(token, config.jwtSecret);
 }
