@@ -14,6 +14,7 @@ import importsRoutes from "./imports.routes.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireStudentAuth } from "../middleware/studentAuth.js";
 import adminRoutes from "./admin.routes.js";
+import notificationsRoutes from "./notifications.routes.js";
 
 const router = Router();
 
@@ -31,5 +32,6 @@ router.use("/expenses", expensesRoutes);
 router.use("/history", historyRoutes);
 router.use("/imports", importsRoutes);
 router.use("/admin", adminRoutes);
+router.use("/notifications", notificationsRoutes);
 
 export default router;

@@ -331,12 +331,29 @@ export async function createScheduledPaymentRequest(workspaceOwnerId, payload, a
     }
   }
 
+  // Deposit + discount (discount only permitted on long plans ≥ 180 days).
+  const deposit = Math.max(0, Number(payload.deposit_amount ?? 0) || 0);
+  const discountEnabled = Boolean(payload.discount_enabled);
+  const canDiscount = Number(plan.duration_days) >= 180;
+  let discount = 0;
+  if (discountEnabled && canDiscount) {
+    discount = Math.max(0, Number(payload.discount_amount ?? 0) || 0);
+  }
+
+  const total = Math.max(0, amount + deposit - discount);
+
   const id = randomUUID();
   await query(
     `INSERT INTO scheduled_payment_requests
-       (id, workspace_owner_id, student_id, plan_id, type, amount, valid_from, valid_until, notes, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent')`,
-    [id, workspaceOwnerId, student_id, plan_id, type, amount, valid_from, valid_until, notes ?? null]
+       (id, workspace_owner_id, student_id, plan_id, type, amount,
+        valid_from, valid_until, notes, status,
+        deposit_amount, discount_enabled, discount_amount, total_amount)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?, ?)`,
+    [
+      id, workspaceOwnerId, student_id, plan_id, type, amount,
+      valid_from, valid_until, notes ?? null,
+      deposit, discountEnabled && canDiscount ? 1 : 0, discount, total,
+    ]
   );
 
   await recordAudit(
@@ -347,13 +364,20 @@ export async function createScheduledPaymentRequest(workspaceOwnerId, payload, a
       action: "scheduled-request-created",
       actorId: audit?.actor_id,
       actorRole: audit?.actor_role,
-      metadata: { student_id, plan_id, type, amount, valid_from, valid_until },
+      metadata: {
+        student_id, plan_id, type, amount, valid_from, valid_until,
+        deposit_amount: deposit, discount_amount: discount, total_amount: total,
+      },
     }
   );
 
   return {
     id, student_id, plan_id, type, amount,
     valid_from, valid_until, notes: notes ?? null, status: "sent",
+    deposit_amount: deposit,
+    discount_enabled: discountEnabled && canDiscount,
+    discount_amount: discount,
+    total_amount: total,
     student_name: student.name, student_phone: student.phone, plan_name: plan.name,
   };
 }
@@ -384,6 +408,13 @@ export async function listScheduledPaymentRequests(workspaceOwnerId, { status } 
   return rows.map((r) => ({
     ...r,
     amount: Number(r.amount),
+    deposit_amount: Number(r.deposit_amount ?? 0),
+    discount_enabled: toBoolean(r.discount_enabled),
+    discount_amount: Number(r.discount_amount ?? 0),
+    total_amount:
+      r.total_amount !== null && r.total_amount !== undefined
+        ? Number(r.total_amount)
+        : Number(r.amount) + Number(r.deposit_amount ?? 0) - Number(r.discount_amount ?? 0),
     valid_from: toDateString(r.valid_from),
     valid_until: toDateString(r.valid_until),
   }));
@@ -419,19 +450,42 @@ export async function fulfillScheduledPaymentRequest(workspaceOwnerId, requestId
   if (!req) throw new AppError("Scheduled request not found", 404);
   if (req.status !== "sent") throw new AppError(`Request is already ${req.status}`, 400);
 
+  // Charge the full total (plan amount + deposit − discount) if present, otherwise amount.
+  const chargedAmount =
+    req.total_amount !== null && req.total_amount !== undefined
+      ? Number(req.total_amount)
+      : Number(req.amount) +
+        Number(req.deposit_amount ?? 0) -
+        Number(req.discount_amount ?? 0);
+
   const { payment, student } = await createPayment(
     workspaceOwnerId,
     {
       student_id: req.student_id,
       plan_id: req.plan_id,
-      amount_paid: Number(req.amount),
+      amount_paid: Math.max(0, chargedAmount),
       valid_from: toDateString(req.valid_from),
       valid_until: toDateString(req.valid_until),
       payment_mode: paymentMode ?? "razorpay",
-      notes: req.notes ?? `Scheduled ${req.type} payment`,
+      notes:
+        req.notes ??
+        `Scheduled ${req.type} payment` +
+          (Number(req.deposit_amount) ? ` (incl. ₹${Number(req.deposit_amount)} deposit)` : "") +
+          (Number(req.discount_amount) ? ` (−₹${Number(req.discount_amount)} discount)` : ""),
     },
     audit
   );
+
+  // If deposit was collected as part of this scheduled request, persist it on the student row
+  // so it shows up on the student profile going forward.
+  if (Number(req.deposit_amount) > 0) {
+    await query(
+      `UPDATE students
+         SET deposit_amount = deposit_amount + ?
+       WHERE id = ? AND workspace_owner_id = ?`,
+      [Number(req.deposit_amount), req.student_id, workspaceOwnerId]
+    );
+  }
 
   await query(
     "UPDATE scheduled_payment_requests SET status = 'paid' WHERE id = ?",

@@ -18,7 +18,14 @@ const EMPTY_SCHED_FORM = {
   valid_from: "",
   valid_until: "",
   notes: "",
+  deposit_amount: "",
+  discount_enabled: false,
+  discount_amount: "",
 };
+
+// Discount is only allowed for long-term plans (>= 180 days / ~6 months).
+const isDiscountEligiblePlan = (plan) =>
+  plan && Number(plan.duration_days) >= 180;
 
 function PaymentsView({
   payments,
@@ -74,9 +81,20 @@ function PaymentsView({
   };
 
   const handleSchedFormChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value, type: inputType, checked } = e.target;
     setSchedForm((prev) => {
-      const updated = { ...prev, [name]: value };
+      const updated = {
+        ...prev,
+        [name]: inputType === "checkbox" ? checked : value,
+      };
+      // If plan changes and new plan is not discount-eligible, clear discount toggle.
+      if (name === "plan_id") {
+        const plan = plans.find((p) => p.id === value);
+        if (!isDiscountEligiblePlan(plan)) {
+          updated.discount_enabled = false;
+          updated.discount_amount = "";
+        }
+      }
       // Auto-fill dates for half_month type
       if (name === "type" && value === "half_month") {
         const { valid_from, valid_until } = halfMonthDates();

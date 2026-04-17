@@ -3,6 +3,32 @@ import { clearStoredSession, getStoredSession } from "./sessionStorage.js";
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://10.0.2.2:4000/api";
 
+function asArray(data, keys = []) {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  for (const key of keys) {
+    if (Array.isArray(data?.[key])) {
+      return data[key];
+    }
+  }
+
+  if (Array.isArray(data?.items)) {
+    return data.items;
+  }
+
+  if (Array.isArray(data?.rows)) {
+    return data.rows;
+  }
+
+  if (Array.isArray(data?.data)) {
+    return data.data;
+  }
+
+  return [];
+}
+
 async function request(path, { method = "GET", body, auth = true } = {}) {
   const session = await getStoredSession();
   const headers = {
@@ -60,7 +86,7 @@ export function createApiClient() {
     },
 
     async listRoles() {
-      return request("/admin/roles");
+      return asArray(await request("/admin/roles"), ["roles"]);
     },
 
     async createRole(payload) {
@@ -92,7 +118,7 @@ export function createApiClient() {
     },
 
     async listPlans() {
-      return request("/plans");
+      return asArray(await request("/plans"), ["plans"]);
     },
 
     async createPlan(payload) {
@@ -117,12 +143,15 @@ export function createApiClient() {
     },
 
     async listStudents(filters = {}) {
-      return request(
-        withParams("/students", {
-          search: filters.search,
-          is_active:
-            typeof filters.isActive === "boolean" ? filters.isActive : undefined,
-        })
+      return asArray(
+        await request(
+          withParams("/students", {
+            search: filters.search,
+            is_active:
+              typeof filters.isActive === "boolean" ? filters.isActive : undefined,
+          })
+        ),
+        ["students"]
       );
     },
 
@@ -148,11 +177,11 @@ export function createApiClient() {
     },
 
     async getStudentHistory(id) {
-      return request(`/students/${id}/history`);
+      return asArray(await request(`/students/${id}/history`), ["history"]);
     },
 
     async listSeats() {
-      return request("/seats");
+      return asArray(await request("/seats"), ["seats"]);
     },
 
     async createSeat(payload) {
@@ -181,12 +210,15 @@ export function createApiClient() {
     },
 
     async listPayments(filters = {}) {
-      return request(
-        withParams("/payments", {
-          limit: filters.limit,
-          startDate: filters.startDate,
-          endDate: filters.endDate,
-        })
+      return asArray(
+        await request(
+          withParams("/payments", {
+            limit: filters.limit,
+            startDate: filters.startDate,
+            endDate: filters.endDate,
+          })
+        ),
+        ["payments"]
       );
     },
 
@@ -198,7 +230,7 @@ export function createApiClient() {
     },
 
     async listExpenses() {
-      return request("/expenses");
+      return asArray(await request("/expenses"), ["expenses"]);
     },
 
     async createExpense(payload) {
@@ -209,7 +241,10 @@ export function createApiClient() {
     },
 
     async listExpenseCategories() {
-      return request("/expenses/categories");
+      return asArray(
+        await request("/expenses/categories"),
+        ["categories", "expenseCategories"]
+      );
     },
 
     async createExpenseCategory(payload) {
@@ -238,33 +273,45 @@ export function createApiClient() {
     },
 
     async listHistory({ objectType, limit } = {}) {
-      return request(
-        withParams("/history", {
-          object_type: objectType,
-          limit,
-        })
+      return asArray(
+        await request(
+          withParams("/history", {
+            object_type: objectType,
+            limit,
+          })
+        ),
+        ["history"]
       );
     },
 
     async importStudents(rows, audit) {
-      return request("/students/import", {
-        method: "POST",
-        body: { rows, audit },
-      });
+      return asArray(
+        await request("/students/import", {
+          method: "POST",
+          body: { rows, audit },
+        }),
+        ["students", "inserted"]
+      );
     },
 
     async importPayments(rows, audit) {
-      return request("/payments/import", {
-        method: "POST",
-        body: { rows, audit },
-      });
+      return asArray(
+        await request("/payments/import", {
+          method: "POST",
+          body: { rows, audit },
+        }),
+        ["payments", "inserted", "results"]
+      );
     },
 
     async importExpenses(rows, audit) {
-      return request("/expenses/import", {
-        method: "POST",
-        body: { rows, audit },
-      });
+      return asArray(
+        await request("/expenses/import", {
+          method: "POST",
+          body: { rows, audit },
+        }),
+        ["expenses", "inserted"]
+      );
     },
 
     async recordImportLog(entry) {
@@ -310,7 +357,7 @@ export function createApiClient() {
     },
 
     async listStudentPlans() {
-      return request("/student/plans");
+      return asArray(await request("/student/plans"), ["plans"]);
     },
 
     async getStudentSubscription() {
@@ -318,7 +365,7 @@ export function createApiClient() {
     },
 
     async listMyPayments() {
-      return request("/student/payments");
+      return asArray(await request("/student/payments"), ["payments"]);
     },
 
     async createPaymentOrder(payload) {
@@ -350,7 +397,7 @@ export function createApiClient() {
     },
 
     async listAvailableSeats() {
-      return request("/student/seats");
+      return asArray(await request("/student/seats"), ["seats"]);
     },
 
     async selectSeat(seatId) {
@@ -377,7 +424,7 @@ export function createApiClient() {
     },
 
     async listPendingPayments() {
-      return request("/payments/pending");
+      return asArray(await request("/payments/pending"), ["payments", "pending"]);
     },
 
     async approvePendingPayment(id) {
@@ -394,7 +441,10 @@ export function createApiClient() {
 
     async listScheduledPaymentRequests(status) {
       const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
-      return request(`/payments/scheduled${suffix}`);
+      return asArray(
+        await request(`/payments/scheduled${suffix}`),
+        ["requests", "scheduled"]
+      );
     },
   };
 }

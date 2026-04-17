@@ -5,6 +5,7 @@ import { toBoolean, toDateString } from "../utils/data.js";
 import { buildUpdateClause } from "../utils/sql.js";
 import { recordAudit, listAuditHistory } from "./audit.service.js";
 import { getDefaultWorkspaceOwner } from "./auth.service.js";
+import { createAdminNotification } from "./notifications.service.js";
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -98,8 +99,11 @@ export async function createStudent(workspaceOwnerId, payload, audit = null, con
         renewal_date,
         registration_source,
         registered_by_role,
-        photo_url
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        photo_url,
+        deposit_amount,
+        aadhaar_file_url,
+        aadhaar_file_type
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       id,
@@ -127,9 +131,36 @@ export async function createStudent(workspaceOwnerId, payload, audit = null, con
       payload.registration_source ?? "admin_panel",
       payload.registered_by_role ?? null,
       payload.photo_url ?? null,
+      Number(payload.deposit_amount ?? 0) || 0,
+      payload.aadhaar_file_url ?? null,
+      payload.aadhaar_file_type ?? null,
     ],
     connection
   );
+
+  // Self-registration (from mobile / public enrollment) → notify admin.
+  const source = payload.registration_source ?? "admin_panel";
+  if (source !== "admin_panel") {
+    try {
+      await createAdminNotification(
+        {
+          workspaceOwnerId,
+          type: "student-registered",
+          title: "New student registration",
+          message: `${name}${payload.phone ? ` (${payload.phone})` : ""} just registered${
+            Number(payload.deposit_amount)
+              ? ` with deposit ₹${Number(payload.deposit_amount)}`
+              : ""
+          }. Send them a plan.`,
+          objectType: "students",
+          objectId: id,
+        },
+        connection
+      );
+    } catch {
+      // Non-fatal: registration should still succeed even if notification insert fails.
+    }
+  }
 
   await recordAudit(
     {
@@ -189,6 +220,12 @@ export async function updateStudent(studentId, workspaceOwnerId, updates, audit 
     registration_source: updates.registration_source,
     registered_by_role: updates.registered_by_role,
     photo_url: updates.photo_url,
+    deposit_amount:
+      updates.deposit_amount === undefined
+        ? undefined
+        : Number(updates.deposit_amount) || 0,
+    aadhaar_file_url: updates.aadhaar_file_url,
+    aadhaar_file_type: updates.aadhaar_file_type,
   };
 
   Object.keys(patch).forEach((key) => {

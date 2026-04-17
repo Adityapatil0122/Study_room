@@ -296,8 +296,8 @@ async function ensureTables() {
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
-  await query(`CREATE INDEX IF NOT EXISTS idx_sched_pay_workspace ON scheduled_payment_requests (workspace_owner_id)`);
-  await query(`CREATE INDEX IF NOT EXISTS idx_sched_pay_student ON scheduled_payment_requests (student_id)`);
+  await createIndexIfMissing("idx_sched_pay_workspace", "scheduled_payment_requests", "workspace_owner_id");
+  await createIndexIfMissing("idx_sched_pay_student", "scheduled_payment_requests", "student_id");
 
   // membership_holds: tracks a paused membership period for a student.
   // When on hold, renewal_date is frozen; days_on_hold is credited back on resume.
@@ -314,13 +314,67 @@ async function ensureTables() {
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
-  await query(`CREATE INDEX IF NOT EXISTS idx_holds_workspace ON membership_holds (workspace_owner_id)`);
-  await query(`CREATE INDEX IF NOT EXISTS idx_holds_student ON membership_holds (student_id)`);
+  await createIndexIfMissing("idx_holds_workspace", "membership_holds", "workspace_owner_id");
+  await createIndexIfMissing("idx_holds_student", "membership_holds", "student_id");
 
   // Safe migrations: add hold columns to students table.
-  await query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS membership_status VARCHAR(32) NOT NULL DEFAULT 'active'`);
-  await query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS hold_start DATE NULL`);
-  await query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS hold_renewal_snapshot DATE NULL`);
+  await addColumnIfMissing("students", "membership_status", "VARCHAR(32) NOT NULL DEFAULT 'active'");
+  await addColumnIfMissing("students", "hold_start", "DATE NULL");
+  await addColumnIfMissing("students", "hold_renewal_snapshot", "DATE NULL");
+
+  // Deposit + Aadhaar file (image or PDF) captured at registration.
+  await addColumnIfMissing("students", "deposit_amount", "NUMERIC(10,2) NOT NULL DEFAULT 0");
+  await addColumnIfMissing("students", "aadhaar_file_url", "TEXT NULL");
+  await addColumnIfMissing("students", "aadhaar_file_type", "VARCHAR(16) NULL");
+
+  // Admin-customizable duration (months) + deposit + discount on scheduled requests.
+  await addColumnIfMissing("plans", "duration_months", "INT NULL");
+  await addColumnIfMissing(
+    "scheduled_payment_requests",
+    "deposit_amount",
+    "NUMERIC(10,2) NOT NULL DEFAULT 0"
+  );
+  await addColumnIfMissing(
+    "scheduled_payment_requests",
+    "discount_enabled",
+    "TINYINT(1) NOT NULL DEFAULT 0"
+  );
+  await addColumnIfMissing(
+    "scheduled_payment_requests",
+    "discount_amount",
+    "NUMERIC(10,2) NOT NULL DEFAULT 0"
+  );
+  await addColumnIfMissing(
+    "scheduled_payment_requests",
+    "total_amount",
+    "NUMERIC(10,2) NULL"
+  );
+
+  // Admin notifications (new-registration, etc.)
+  await query(`
+    CREATE TABLE IF NOT EXISTS admin_notifications (
+      id CHAR(36) PRIMARY KEY,
+      workspace_owner_id CHAR(36) NOT NULL,
+      type VARCHAR(64) NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      message TEXT NULL,
+      object_type VARCHAR(64) NULL,
+      object_id CHAR(36) NULL,
+      is_read TINYINT(1) NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+  await createIndexIfMissing(
+    "idx_admin_notifications_workspace",
+    "admin_notifications",
+    "workspace_owner_id"
+  );
+  await createIndexIfMissing(
+    "idx_admin_notifications_unread",
+    "admin_notifications",
+    "workspace_owner_id, is_read"
+  );
 
   await query(`
     CREATE TABLE IF NOT EXISTS import_logs (
