@@ -8,24 +8,24 @@ let server;
 function getStartupHelp(error) {
   if (error?.code === "ECONNREFUSED") {
     return [
-      `Could not connect to PostgreSQL at ${config.pgHost}:${config.pgPort}.`,
-      "Start your PostgreSQL service before running the API.",
-      "On Windows, start the postgresql-x64 service from Services, or launch it via pgAdmin.",
-      `Also make sure the database "${config.pgDatabase}" exists and that the credentials in .env match your local Postgres setup.`,
+      `Could not connect to MySQL at ${config.mysqlHost}:${config.mysqlPort}.`,
+      "Start your MySQL service before running the API.",
+      "On Windows, start the MySQL80 service from Services or your MySQL installer tools.",
+      `Also make sure the database "${config.mysqlDatabase}" exists and that the credentials in .env match your local MySQL setup.`,
     ].join(" ");
   }
 
-  if (error?.code === "28P01") {
+  if (error?.code === "ER_ACCESS_DENIED_ERROR") {
     return [
-      `Postgres rejected the credentials for user "${config.pgUser}".`,
-      "Check PG_USER and PG_PASSWORD in your .env file.",
+      `MySQL rejected the credentials for user "${config.mysqlUser}".`,
+      "Check MYSQL_USER and MYSQL_PASSWORD in your .env file.",
     ].join(" ");
   }
 
-  if (error?.code === "3D000") {
+  if (error?.code === "ER_BAD_DB_ERROR") {
     return [
-      `Postgres database "${config.pgDatabase}" does not exist.`,
-      "Create it in pgAdmin (or via psql: CREATE DATABASE study_room;) and try again.",
+      `MySQL database "${config.mysqlDatabase}" does not exist.`,
+      "Create it first (for example: CREATE DATABASE study_room;) and try again.",
     ].join(" ");
   }
 

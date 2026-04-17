@@ -413,10 +413,40 @@ export async function verifyRazorpayPaymentForStudent(
   };
 }
 
-/**
- * Create a QR/offline UPI payment request that awaits admin approval.
- */
-export async function createQrPaymentRequest(
+async function getWorkspaceQrSettings(workspaceOwnerId) {
+  const settings = await queryOne(
+    "SELECT preferences FROM admin_settings WHERE admin_id = ? LIMIT 1",
+    [workspaceOwnerId]
+  );
+  const prefs = parseJson(settings?.preferences, {});
+  return {
+    upi_qr_url: prefs.upiQrUrl ?? null,
+  };
+}
+
+async function getLatestPendingQrPayment(studentId, workspaceOwnerId) {
+  const pendingQr = await queryOne(
+    `SELECT id, plan_id, amount, valid_from, valid_until, created_at
+     FROM pending_payments
+     WHERE student_id = ? AND workspace_owner_id = ? AND status = 'pending'
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [studentId, workspaceOwnerId]
+  );
+
+  if (!pendingQr) return null;
+
+  return {
+    id: pendingQr.id,
+    plan_id: pendingQr.plan_id,
+    amount: Number(pendingQr.amount),
+    valid_from: toDateString(pendingQr.valid_from),
+    valid_until: toDateString(pendingQr.valid_until),
+    submitted_at: pendingQr.created_at,
+  };
+}
+
+async function buildQrPaymentContext(
   studentId,
   workspaceOwnerId,
   { plan_id, is_renewal }
@@ -430,11 +460,69 @@ export async function createQrPaymentRequest(
   if (!plan) throw new AppError("Plan not found", 404);
 
   const student = await getStudent(studentId, workspaceOwnerId);
-
   const billing = calcBillingDates(
     student.join_date ?? new Date().toISOString().slice(0, 10),
     Number(plan.price),
     Boolean(is_renewal)
+  );
+  const qrSettings = await getWorkspaceQrSettings(workspaceOwnerId);
+
+  return {
+    plan,
+    billing,
+    qrSettings,
+  };
+}
+
+export async function previewQrPayment(
+  studentId,
+  workspaceOwnerId,
+  payload
+) {
+  const { plan, billing, qrSettings } = await buildQrPaymentContext(
+    studentId,
+    workspaceOwnerId,
+    payload
+  );
+  const existingPending = await getLatestPendingQrPayment(
+    studentId,
+    workspaceOwnerId
+  );
+
+  return {
+    amount: billing.amount,
+    valid_from: billing.valid_from,
+    valid_until: billing.valid_until,
+    prorated: billing.prorated,
+    upi_qr_url: qrSettings.upi_qr_url,
+    plan: { id: plan.id, name: plan.name, price: Number(plan.price) },
+    existing_pending: existingPending,
+  };
+}
+
+/**
+ * Create a QR/offline UPI payment request that awaits admin approval.
+ */
+export async function createQrPaymentRequest(
+  studentId,
+  workspaceOwnerId,
+  { plan_id, is_renewal }
+) {
+  const existingPending = await getLatestPendingQrPayment(
+    studentId,
+    workspaceOwnerId
+  );
+  if (existingPending) {
+    return {
+      ...existingPending,
+      already_pending: true,
+    };
+  }
+
+  const { plan, billing } = await buildQrPaymentContext(
+    studentId,
+    workspaceOwnerId,
+    { plan_id, is_renewal }
   );
 
   const id = randomUUID();
@@ -444,21 +532,18 @@ export async function createQrPaymentRequest(
      VALUES (?, ?, ?, ?, ?, ?, ?, 'qr', 'pending')`,
     [id, workspaceOwnerId, studentId, plan_id, billing.amount, billing.valid_from, billing.valid_until]
   );
-
-  // Read UPI QR URL from admin settings (if configured)
-  const settings = await queryOne(
-    "SELECT preferences FROM admin_settings WHERE admin_id = ? LIMIT 1",
-    [workspaceOwnerId]
-  );
-  const prefs = parseJson(settings?.preferences, {});
+  const created = await getLatestPendingQrPayment(studentId, workspaceOwnerId);
 
   return {
-    id,
-    amount: billing.amount,
-    valid_from: billing.valid_from,
-    valid_until: billing.valid_until,
-    prorated: billing.prorated,
-    upi_qr_url: prefs.upiQrUrl ?? null,
+    ...(created ?? {
+      id,
+      plan_id,
+      amount: billing.amount,
+      valid_from: billing.valid_from,
+      valid_until: billing.valid_until,
+      submitted_at: new Date().toISOString(),
+    }),
+    already_pending: false,
     plan: { id: plan.id, name: plan.name, price: Number(plan.price) },
   };
 }

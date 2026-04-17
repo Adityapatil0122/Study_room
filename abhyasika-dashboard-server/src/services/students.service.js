@@ -45,7 +45,9 @@ export async function listStudents(workspaceOwnerId, { search, isActive } = {}) 
 
   if (search) {
     const pattern = `%${search}%`;
-    filters.push("(name ILIKE ? OR phone ILIKE ? OR email ILIKE ? OR aadhaar ILIKE ?)");
+    filters.push(
+      "(LOWER(name) LIKE LOWER(?) OR LOWER(phone) LIKE LOWER(?) OR LOWER(email) LIKE LOWER(?) OR LOWER(aadhaar) LIKE LOWER(?))"
+    );
     params.push(pattern, pattern, pattern, pattern);
   }
 

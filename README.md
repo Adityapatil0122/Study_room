@@ -50,7 +50,7 @@ Update the backend `.env` with your MySQL details:
 MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3306
 MYSQL_USER=root
-MYSQL_PASSWORD=
+MYSQL_PASSWORD=admin1234
 MYSQL_DATABASE=abhyasika
 JWT_SECRET=replace-with-strong-random-secret-key
 PORT=4000

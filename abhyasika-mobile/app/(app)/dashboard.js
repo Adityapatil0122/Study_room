@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Toast from "react-native-toast-message";
 import {
   Armchair,
   BarChart3,
@@ -184,13 +185,19 @@ export default function Dashboard() {
   const [error, setError] = useState("");
   const [modal, setModal] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pendingPayments, setPendingPayments] = useState([]);
+  const [scheduledRequests, setScheduledRequests] = useState([]);
+  const [notificationActionId, setNotificationActionId] = useState("");
   const [studentForm, setStudentForm] = useState({ name: "", phone: "", email: "", join_date: today(), current_plan_id: "" });
   const [paymentForm, setPaymentForm] = useState({ student_id: "", plan_id: "", amount_paid: "", valid_from: today(), payment_mode: "upi" });
   const [expenseForm, setExpenseForm] = useState({ title: "", amount: "", category: "misc", expense_date: today(), paid_via: "cash" });
   const [seatForm, setSeatForm] = useState({ seat_number: "" });
   const [assignForm, setAssignForm] = useState({ seatId: "", studentId: "" });
   const [planForm, setPlanForm] = useState({ name: "", price: "", duration_days: "30" });
+  const hasSeenPendingRequestsRef = useRef(false);
+  const previousPendingRequestIdsRef = useRef(new Set());
   const contentWidth = Math.max(width - 40, 280);
   const statGap = 12;
   const statColumns = contentWidth < 330 ? 1 : contentWidth >= 720 ? 3 : 2;
@@ -241,7 +248,18 @@ export default function Dashboard() {
 
   const load = useCallback(async () => {
     setError("");
-    const [students, seats, plans, payments, expenses, categories, history, roles] = await Promise.all([
+    const [
+      students,
+      seats,
+      plans,
+      payments,
+      expenses,
+      categories,
+      history,
+      roles,
+      pending,
+      scheduled,
+    ] = await Promise.all([
       api.listStudents(),
       api.listSeats(),
       api.listPlans(),
@@ -250,6 +268,8 @@ export default function Dashboard() {
       api.listExpenseCategories(),
       api.listHistory({ limit: 80 }).catch(() => []),
       api.listRoles().catch(() => []),
+      api.listPendingPayments ? api.listPendingPayments() : [],
+      api.listScheduledPaymentRequests ? api.listScheduledPaymentRequests("sent") : [],
     ]);
     setData({
       students: students ?? [],
@@ -261,6 +281,8 @@ export default function Dashboard() {
       history: history ?? [],
       roles: roles ?? [],
     });
+    setPendingPayments(pending ?? []);
+    setScheduledRequests(scheduled ?? []);
   }, [api]);
 
   useEffect(() => {
@@ -281,6 +303,36 @@ export default function Dashboard() {
       setPaymentForm((form) => ({ ...form, plan_id: form.plan_id || data.plans[0].id }));
     }
   }, [data.plans]);
+
+  useEffect(() => {
+    const currentIds = new Set(pendingPayments.map((item) => item.id));
+
+    if (!hasSeenPendingRequestsRef.current) {
+      hasSeenPendingRequestsRef.current = true;
+      previousPendingRequestIdsRef.current = currentIds;
+      return;
+    }
+
+    const newPendingItems = pendingPayments.filter(
+      (item) => !previousPendingRequestIdsRef.current.has(item.id)
+    );
+
+    if (newPendingItems.length > 0) {
+      Toast.show({
+        type: "info",
+        text1:
+          newPendingItems.length === 1
+            ? "New QR approval request"
+            : `${newPendingItems.length} QR approvals pending`,
+        text2:
+          newPendingItems.length === 1
+            ? `${newPendingItems[0].student_name || "A student"} sent a payment approval request.`
+            : "Open notifications to review and approve them.",
+      });
+    }
+
+    previousPendingRequestIdsRef.current = currentIds;
+  }, [pendingPayments]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -322,6 +374,54 @@ export default function Dashboard() {
       .toLowerCase()
       .includes(search.toLowerCase())
   );
+
+  const notifications = useMemo(() => {
+    const approvalItems = pendingPayments.map((pending) => ({
+      id: `pending-${pending.id}`,
+      title: "QR payment needs approval",
+      message: `${pending.student_name || "Student"} requested approval for ${money(pending.amount)}`,
+      subtitle: `${pending.plan_name || "Plan"} | ${pending.valid_from} to ${pending.valid_until}`,
+      date: pending.created_at ? new Date(pending.created_at) : new Date(),
+      tone: "approval",
+      pendingId: pending.id,
+    }));
+
+    const scheduledItems = scheduledRequests.map((request) => ({
+      id: `scheduled-${request.id}`,
+      title: "Scheduled request is still pending",
+      message: `${request.student_name || "Student"} has not paid ${money(request.amount)} yet`,
+      subtitle: `${request.type === "half_month" ? "15-Day" : "Custom"} request`,
+      date: request.created_at ? new Date(request.created_at) : new Date(),
+      tone: "scheduled",
+    }));
+
+    const renewalItems = renewals.map((student) => ({
+      id: `renewal-${student.id}`,
+      title: "Renewal due soon",
+      message: `${student.name} expires on ${student.renewal_date || "-"}`,
+      subtitle: `${diffDays(student.renewal_date)} day(s) left`,
+      date: student.renewal_date ? new Date(`${student.renewal_date}T00:00:00`) : new Date(),
+      tone: "renewal",
+    }));
+
+    const registrationItems = data.students
+      .filter((student) => !student.registration_paid)
+      .map((student) => ({
+        id: `registration-${student.id}`,
+        title: "Registration fee pending",
+        message: `${student.name} still has pending registration`,
+        subtitle: student.phone || student.email || "Student account",
+        date: student.join_date ? new Date(`${student.join_date}T00:00:00`) : new Date(),
+        tone: "registration",
+      }));
+
+    return [
+      ...approvalItems,
+      ...scheduledItems,
+      ...renewalItems,
+      ...registrationItems,
+    ].sort((a, b) => b.date - a.date);
+  }, [pendingPayments, scheduledRequests, renewals, data.students]);
 
   const save = async (task, successView) => {
     setBusy(true);
@@ -413,6 +513,47 @@ export default function Dashboard() {
     setModal("assign");
   };
 
+  const approvePendingRequest = async (pendingId) => {
+    setNotificationActionId(`approve:${pendingId}`);
+    try {
+      const { payment, student } = await api.approvePendingPayment(pendingId);
+      setPendingPayments((prev) => prev.filter((item) => item.id !== pendingId));
+      setData((prev) => ({
+        ...prev,
+        payments: payment ? [payment, ...prev.payments] : prev.payments,
+        students: student
+          ? prev.students.map((item) => (item.id === student.id ? student : item))
+          : prev.students,
+      }));
+      Toast.show({
+        type: "success",
+        text1: "QR payment approved",
+        text2: `${student?.name || "Student"} has been activated successfully.`,
+      });
+    } catch (err) {
+      Alert.alert("Approval failed", err.message || "Please try again.");
+    } finally {
+      setNotificationActionId("");
+    }
+  };
+
+  const rejectPendingRequest = async (pendingId) => {
+    setNotificationActionId(`reject:${pendingId}`);
+    try {
+      await api.rejectPendingPayment(pendingId);
+      setPendingPayments((prev) => prev.filter((item) => item.id !== pendingId));
+      Toast.show({
+        type: "info",
+        text1: "QR request rejected",
+        text2: "The student can submit a fresh request later.",
+      });
+    } catch (err) {
+      Alert.alert("Rejection failed", err.message || "Please try again.");
+    } finally {
+      setNotificationActionId("");
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView className="flex-1 items-center justify-center bg-slate-50">
@@ -431,6 +572,7 @@ export default function Dashboard() {
         <Stat style={statCardStyle} compact={compactStats} label="Seats Available" value={`${availableSeats.length} free`} icon={Armchair} tone="bg-slate-100" onPress={() => setActive("seats")} />
         <Stat style={statCardStyle} compact={compactStats} label="Revenue Month" value={money(monthRevenue)} icon={BarChart3} tone="bg-violet-50" onPress={() => setActive("reports")} />
         <Stat style={statCardStyle} compact={compactStats} label="Renewals 7 Days" value={renewals.length} icon={Bell} tone="bg-amber-50" onPress={() => setActive("renewals")} />
+        <Stat style={statCardStyle} compact={compactStats} label="QR Approvals" value={pendingPayments.length} icon={QrCode} tone="bg-orange-50" onPress={() => setNotificationsOpen(true)} />
         <Stat style={statCardStyle} compact={compactStats} label="Expenses Month" value={money(monthExpenses)} icon={Wallet2} tone="bg-rose-50" onPress={() => setActive("expenses")} />
       </View>
     </>
@@ -484,6 +626,24 @@ export default function Dashboard() {
   const paymentsView = (
     <>
       <Header title="Payments" subtitle="Fees, validity, and collection modes." action="Log" onAction={() => setModal("payment")} />
+      {pendingPayments.length ? (
+        <Card className="mb-4">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1 pr-3">
+              <Text className="text-lg font-bold text-slate-950">Pending QR Approvals</Text>
+              <Text className="mt-1.5 text-base text-slate-500">
+                {pendingPayments.length} student payment request(s) need approval.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setNotificationsOpen(true)}
+              className="rounded-xl bg-amber-500 px-4 py-2.5"
+            >
+              <Text className="text-base font-semibold text-white">Review</Text>
+            </TouchableOpacity>
+          </View>
+        </Card>
+      ) : null}
       {data.payments.map((payment) => (
         <Card key={payment.id} className="mb-4">
           <View className="flex-row justify-between gap-3">
@@ -654,20 +814,93 @@ export default function Dashboard() {
               <Text className="text-sm text-slate-500">{admin?.email || "Mobile admin"}</Text>
             </View>
           </View>
-          <TouchableOpacity
-            onPress={handleSync}
-            disabled={refreshing}
-            className="rounded-xl bg-indigo-50 p-3"
-          >
-            <Animated.View style={{ transform: [{ rotate: syncRotate }] }}>
-              <RefreshCw size={22} color="#4f46e5" />
-            </Animated.View>
-          </TouchableOpacity>
+          <View className="flex-row items-center gap-2">
+            <TouchableOpacity
+              onPress={() => setNotificationsOpen(true)}
+              className="rounded-xl bg-amber-50 p-3"
+            >
+              <View>
+                <Bell size={22} color="#d97706" />
+                {notifications.length ? (
+                  <View className="absolute -right-2 -top-2 min-w-[18px] rounded-full bg-rose-500 px-1 py-0.5">
+                    <Text className="text-center text-[10px] font-bold text-white">
+                      {Math.min(notifications.length, 9)}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleSync}
+              disabled={refreshing}
+              className="rounded-xl bg-indigo-50 p-3"
+            >
+              <Animated.View style={{ transform: [{ rotate: syncRotate }] }}>
+                <RefreshCw size={22} color="#4f46e5" />
+              </Animated.View>
+            </TouchableOpacity>
+          </View>
         </View>
         {error ? <Text className="mt-3 rounded-xl bg-rose-50 px-4 py-2.5 text-base text-rose-600">{error}</Text> : null}
       </View>
 
       <ScrollView className="flex-1 px-5 pt-6" contentContainerStyle={{ paddingBottom: 40 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>{views[active]}</ScrollView>
+
+      <Sheet title="Notifications" visible={notificationsOpen} onClose={() => setNotificationsOpen(false)}>
+        {notifications.length === 0 ? (
+          <Card>
+            <Text className="text-base text-slate-500">No notifications right now.</Text>
+          </Card>
+        ) : (
+          notifications.map((notification) => (
+            <Card key={notification.id} className="mb-4">
+              <Text
+                className={`text-sm font-bold uppercase ${
+                  notification.tone === "approval"
+                    ? "text-amber-600"
+                    : notification.tone === "scheduled"
+                    ? "text-indigo-600"
+                    : notification.tone === "renewal"
+                    ? "text-rose-600"
+                    : "text-slate-500"
+                }`}
+              >
+                {notification.title}
+              </Text>
+              <Text className="mt-2 text-base font-semibold text-slate-950">
+                {notification.message}
+              </Text>
+              <Text className="mt-1 text-sm text-slate-500">{notification.subtitle}</Text>
+              <Text className="mt-2 text-xs text-slate-400">
+                {notification.date.toLocaleString("en-IN")}
+              </Text>
+
+              {notification.pendingId ? (
+                <View className="mt-4 flex-row gap-3">
+                  <TouchableOpacity
+                    disabled={notificationActionId === `approve:${notification.pendingId}` || notificationActionId === `reject:${notification.pendingId}`}
+                    onPress={() => approvePendingRequest(notification.pendingId)}
+                    className="flex-1 rounded-xl bg-emerald-600 px-4 py-3"
+                  >
+                    <Text className="text-center text-base font-semibold text-white">
+                      {notificationActionId === `approve:${notification.pendingId}` ? "Approving..." : "Approve"}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    disabled={notificationActionId === `approve:${notification.pendingId}` || notificationActionId === `reject:${notification.pendingId}`}
+                    onPress={() => rejectPendingRequest(notification.pendingId)}
+                    className="flex-1 rounded-xl border border-rose-200 px-4 py-3"
+                  >
+                    <Text className="text-center text-base font-semibold text-rose-600">
+                      {notificationActionId === `reject:${notification.pendingId}` ? "Rejecting..." : "Reject"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+            </Card>
+          ))
+        )}
+      </Sheet>
 
       <Sheet title="New Student" visible={modal === "student"} onClose={() => setModal("")}>
         <Input label="Name" value={studentForm.name} onChangeText={(name) => setStudentForm((p) => ({ ...p, name }))} placeholder="Student name" />

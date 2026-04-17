@@ -119,8 +119,10 @@ function App() {
     [Array.isArray(rawRoleIds) ? rawRoleIds.join(",") : ""]
   );
   const [notificationOpen, setNotificationOpen] = useState(false);
-const [notificationFilter, setNotificationFilter] = useState("all");
-const notificationRef = useRef(null);
+  const [notificationFilter, setNotificationFilter] = useState("all");
+  const notificationRef = useRef(null);
+  const hasSeenPendingNotificationsRef = useRef(false);
+  const previousPendingNotificationIdsRef = useRef(new Set());
 
 
   // OPTIMIZED: Fixed route listener - "pushstate" and "replacestate" don't exist as events
@@ -333,6 +335,22 @@ const notificationRef = useRef(null);
     });
   }, [payments, studentMap]);
 
+  const pendingApprovalNotifications = useMemo(() => {
+    if (pendingPayments.length === 0) return [];
+
+    return pendingPayments.map((pending) => ({
+      id: `pending-${pending.id}`,
+      title: "QR payment needs approval",
+      message: `${pending.student_name || "Student"} requested approval for Rs ${Number(
+        pending.amount || 0
+      ).toLocaleString("en-IN")}`,
+      tone: "alert",
+      category: "approval",
+      date: pending.created_at ? new Date(pending.created_at) : new Date(),
+      pendingPaymentId: pending.id,
+    }));
+  }, [pendingPayments]);
+
   const seatMaintenanceNotifications = useMemo(() => {
     if (seats.length === 0) return [];
     const now = new Date();
@@ -351,6 +369,7 @@ const notificationRef = useRef(null);
 
   const notifications = useMemo(() => {
     const items = [
+      ...pendingApprovalNotifications,
       ...renewalNotifications,
       ...registrationNotifications,
       ...qrEnrollmentNotifications,
@@ -360,6 +379,7 @@ const notificationRef = useRef(null);
 
     return items.sort((a, b) => b.date - a.date).slice(0, 25);
   }, [
+    pendingApprovalNotifications,
     renewalNotifications,
     registrationNotifications,
     qrEnrollmentNotifications,
@@ -407,6 +427,7 @@ const notificationRef = useRef(null);
 
   const notificationTabs = [
     { key: "all", label: "All" },
+    { key: "approval", label: "Approvals" },
     { key: "renewal", label: "Renewals" },
     { key: "payment", label: "Payments" },
     { key: "registration", label: "Reg. Fees" },
@@ -469,14 +490,16 @@ const notificationRef = useRef(null);
     setBusyIds([]);
     setPaymentFilters(INITIAL_PAYMENT_FILTERS);
     setError("");
+    hasSeenPendingNotificationsRef.current = false;
+    previousPendingNotificationIdsRef.current = new Set();
   }, [isAuthenticated]);
 
-  useEffect(() => {
-    let mounted = true;
-
-    async function bootstrap() {
+  const loadWorkspaceData = useCallback(
+    async ({ background = false } = {}) => {
       try {
-        setInitialLoading(true);
+        if (!background) {
+          setInitialLoading(true);
+        }
         setError("");
         const [
           planData,
@@ -487,18 +510,19 @@ const notificationRef = useRef(null);
           categoryData,
           pendingData,
           scheduledData,
-        ] =
-          await Promise.all([
-            api.listPlans(),
-            api.listStudents(),
-            api.listSeats(),
-            api.listPayments(),
-            api.listExpenses(),
-            api.listExpenseCategories ? api.listExpenseCategories() : [],
-            api.listPendingPayments ? api.listPendingPayments() : [],
-            api.listScheduledPaymentRequests ? api.listScheduledPaymentRequests("sent") : [],
-          ]);
-        if (!mounted) return;
+        ] = await Promise.all([
+          api.listPlans(),
+          api.listStudents(),
+          api.listSeats(),
+          api.listPayments(),
+          api.listExpenses(),
+          api.listExpenseCategories ? api.listExpenseCategories() : [],
+          api.listPendingPayments ? api.listPendingPayments() : [],
+          api.listScheduledPaymentRequests
+            ? api.listScheduledPaymentRequests("sent")
+            : [],
+        ]);
+
         setPlans(sortPlans(planData));
         setStudents(studentData);
         setSeats(seatData);
@@ -509,27 +533,32 @@ const notificationRef = useRef(null);
         setScheduledRequests(scheduledData || []);
         setError("");
       } catch (err) {
-        if (!mounted) return;
         setError(err.message ?? "Failed to load dashboard data.");
       } finally {
-        if (mounted) {
+        if (!background) {
           setInitialLoading(false);
         }
       }
-    }
+    },
+    [api]
+  );
 
+  useEffect(() => {
     if (!isAuthenticated) {
       setInitialLoading(false);
-      return () => {
-        mounted = false;
-      };
+      return undefined;
     }
 
-    bootstrap();
+    loadWorkspaceData().catch(() => {});
+
+    const intervalId = window.setInterval(() => {
+      loadWorkspaceData({ background: true }).catch(() => {});
+    }, 30000);
+
     return () => {
-      mounted = false;
+      window.clearInterval(intervalId);
     };
-  }, [api, isAuthenticated]);
+  }, [isAuthenticated, loadWorkspaceData]);
 
   useEffect(() => {
     let mounted = true;
@@ -604,6 +633,30 @@ const notificationRef = useRef(null);
     },
     [theme]
   );
+
+  useEffect(() => {
+    const currentIds = new Set(pendingPayments.map((item) => item.id));
+
+    if (!hasSeenPendingNotificationsRef.current) {
+      hasSeenPendingNotificationsRef.current = true;
+      previousPendingNotificationIdsRef.current = currentIds;
+      return;
+    }
+
+    const newPendingItems = pendingPayments.filter(
+      (item) => !previousPendingNotificationIdsRef.current.has(item.id)
+    );
+
+    if (newPendingItems.length > 0) {
+      const message =
+        newPendingItems.length === 1
+          ? `${newPendingItems[0].student_name || "A student"} sent a QR approval request.`
+          : `${newPendingItems.length} new QR approval requests need review.`;
+      showToast(message, "info");
+    }
+
+    previousPendingNotificationIdsRef.current = currentIds;
+  }, [pendingPayments, showToast]);
 
   const toastContainer = (
     <ToastContainer
@@ -1525,7 +1578,9 @@ const notificationRef = useRef(null);
                                   >
                                     <LucideIcon
                                       name={
-                                        notification.category === "renewal"
+                                        notification.category === "approval"
+                                          ? "BadgeAlert"
+                                          : notification.category === "renewal"
                                           ? "CalendarClock"
                                           : notification.category === "payment"
                                           ? "CreditCard"
@@ -1548,6 +1603,35 @@ const notificationRef = useRef(null);
                                     <p className="text-[11px] text-slate-400 dark:text-slate-500">
                                       {formatRelativeTime(notification.date)}
                                     </p>
+                                    {notification.category === "approval" &&
+                                    notification.pendingPaymentId ? (
+                                      <div className="mt-2 flex gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            handleApprovePendingPayment(
+                                              notification.pendingPaymentId
+                                            );
+                                          }}
+                                          className="inline-flex items-center rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-emerald-500"
+                                        >
+                                          Approve
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            handleRejectPendingPayment(
+                                              notification.pendingPaymentId
+                                            );
+                                          }}
+                                          className="inline-flex items-center rounded-lg border border-rose-200 px-2.5 py-1 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50"
+                                        >
+                                          Reject
+                                        </button>
+                                      </div>
+                                    ) : null}
                                   </div>
                                 </div>
                               ))

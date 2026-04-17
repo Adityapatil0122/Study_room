@@ -7,6 +7,7 @@ import {
   listStudentPayments,
   createRazorpayOrderForStudent,
   verifyRazorpayPaymentForStudent,
+  previewQrPayment,
   createQrPaymentRequest,
   listSeatsForStudent,
   selectSeatForStudent,
@@ -61,6 +62,12 @@ export const postVerifyPayment = asyncHandler(async (req, res) => {
     workspaceOwnerId,
     req.body ?? {}
   );
+  res.json({ data });
+});
+
+export const postPreviewQrPayment = asyncHandler(async (req, res) => {
+  const { studentId, workspaceOwnerId } = req.studentAuth;
+  const data = await previewQrPayment(studentId, workspaceOwnerId, req.body ?? {});
   res.json({ data });
 });
 

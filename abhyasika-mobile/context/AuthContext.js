@@ -223,6 +223,36 @@ export function AuthProvider({ children }) {
     [api, applySession]
   );
 
+  const unifiedLogin = useCallback(
+    async (email, password) => {
+      setAuthError("");
+      setAuthLoading(true);
+      try {
+        try {
+          const adminSession = await api.login(email, password);
+          await applySession(adminSession, "admin");
+          return { userType: "admin", user: adminSession?.user ?? null };
+        } catch (adminErr) {
+          try {
+            const studentSession = await api.studentLogin(email, password);
+            await applySession(studentSession, "student");
+            return { userType: "student", user: studentSession?.user ?? null };
+          } catch (studentErr) {
+            const message =
+              studentErr?.message ??
+              adminErr?.message ??
+              "Invalid email or password.";
+            setAuthError(message);
+            throw new Error(message);
+          }
+        }
+      } finally {
+        setAuthLoading(false);
+      }
+    },
+    [api, applySession]
+  );
+
   const studentRegister = useCallback(
     async (payload) => {
       setAuthError("");
@@ -280,6 +310,7 @@ export function AuthProvider({ children }) {
       authError,
       login,
       studentLogin,
+      unifiedLogin,
       studentRegister,
       logout,
       getAccessToken,
@@ -300,6 +331,7 @@ export function AuthProvider({ children }) {
       authError,
       login,
       studentLogin,
+      unifiedLogin,
       studentRegister,
       logout,
       getAccessToken,

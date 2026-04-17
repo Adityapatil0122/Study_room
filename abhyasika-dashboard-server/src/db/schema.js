@@ -3,7 +3,7 @@ import path from "path";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { config } from "../config/env.js";
-import { pool, query, queryOne } from "./connection.js";
+import { query, queryOne } from "./connection.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultWorkspaceOwner } from "../services/auth.service.js";
 
@@ -13,29 +13,36 @@ async function ensureUploadsDir() {
   await fs.mkdir(path.join(config.uploadsDir, "students"), { recursive: true });
 }
 
-async function ensureUpdatedAtTrigger() {
-  // Create a reusable trigger function that bumps updated_at on UPDATE.
-  await query(`
-    CREATE OR REPLACE FUNCTION set_updated_at()
-    RETURNS TRIGGER AS $$
-    BEGIN
-      NEW.updated_at = CURRENT_TIMESTAMP;
-      RETURN NEW;
-    END;
-    $$ LANGUAGE plpgsql;
-  `);
+async function createIndexIfMissing(indexName, tableName, columns) {
+  const existing = await queryOne(
+    `
+      SELECT 1
+      FROM information_schema.statistics
+      WHERE table_schema = ? AND table_name = ? AND index_name = ?
+      LIMIT 1
+    `,
+    [config.mysqlDatabase, tableName, indexName]
+  );
+
+  if (!existing) {
+    await query(`CREATE INDEX ${indexName} ON ${tableName} (${columns})`);
+  }
 }
 
-async function attachUpdatedAtTrigger(tableName) {
-  const triggerName = `trg_${tableName}_set_updated_at`;
-  await query(
-    `DROP TRIGGER IF EXISTS ${triggerName} ON ${tableName}`
+async function addColumnIfMissing(tableName, columnName, definition) {
+  const existing = await queryOne(
+    `
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = ? AND table_name = ? AND column_name = ?
+      LIMIT 1
+    `,
+    [config.mysqlDatabase, tableName, columnName]
   );
-  await query(
-    `CREATE TRIGGER ${triggerName}
-     BEFORE UPDATE ON ${tableName}
-     FOR EACH ROW EXECUTE FUNCTION set_updated_at()`
-  );
+
+  if (!existing) {
+    await query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  }
 }
 
 async function ensureTables() {
@@ -47,15 +54,15 @@ async function ensureTables() {
       email VARCHAR(255) NOT NULL UNIQUE,
       password_hash VARCHAR(255) NOT NULL,
       full_name VARCHAR(255) NULL,
-      is_owner BOOLEAN NOT NULL DEFAULT FALSE,
-      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      is_owner TINYINT(1) NOT NULL DEFAULT 0,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
       invite_status VARCHAR(32) NOT NULL DEFAULT 'active',
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )
   `);
-  await query(`CREATE INDEX IF NOT EXISTS idx_admin_owner_id ON admins (owner_id)`);
-  await query(`CREATE INDEX IF NOT EXISTS idx_admin_role_id ON admins (role_id)`);
+  await createIndexIfMissing("idx_admin_owner_id", "admins", "owner_id");
+  await createIndexIfMissing("idx_admin_role_id", "admins", "role_id");
 
   await query(`
     CREATE TABLE IF NOT EXISTS admin_roles (
@@ -63,19 +70,19 @@ async function ensureTables() {
       created_by CHAR(36) NOT NULL,
       name VARCHAR(120) NOT NULL,
       description TEXT NULL,
-      permissions JSONB NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      permissions JSON NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       CONSTRAINT uniq_role_name_per_owner UNIQUE (created_by, name)
     )
   `);
-  await query(`CREATE INDEX IF NOT EXISTS idx_roles_created_by ON admin_roles (created_by)`);
+  await createIndexIfMissing("idx_roles_created_by", "admin_roles", "created_by");
 
   await query(`
     CREATE TABLE IF NOT EXISTS admin_settings (
       admin_id CHAR(36) PRIMARY KEY,
-      preferences JSONB NOT NULL,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      preferences JSON NOT NULL,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )
   `);
 
@@ -86,13 +93,13 @@ async function ensureTables() {
       name VARCHAR(120) NOT NULL,
       price NUMERIC(10,2) NOT NULL DEFAULT 0,
       duration_days INT NOT NULL DEFAULT 30,
-      is_active BOOLEAN NOT NULL DEFAULT TRUE,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       CONSTRAINT uniq_plan_name_per_workspace UNIQUE (workspace_owner_id, name)
     )
   `);
-  await query(`CREATE INDEX IF NOT EXISTS idx_plans_workspace_owner ON plans (workspace_owner_id)`);
+  await createIndexIfMissing("idx_plans_workspace_owner", "plans", "workspace_owner_id");
 
   await query(`
     CREATE TABLE IF NOT EXISTS students (
@@ -112,22 +119,22 @@ async function ensureTables() {
       fee_plan_type VARCHAR(32) NOT NULL DEFAULT 'monthly',
       fee_cycle VARCHAR(32) NOT NULL DEFAULT 'calendar',
       limited_days INT NULL,
-      registration_paid BOOLEAN NOT NULL DEFAULT FALSE,
+      registration_paid TINYINT(1) NOT NULL DEFAULT 0,
       join_date DATE NULL,
-      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
       current_plan_id CHAR(36) NULL,
       current_seat_id CHAR(36) NULL,
       renewal_date DATE NULL,
       registration_source VARCHAR(64) NOT NULL DEFAULT 'admin_panel',
       registered_by_role VARCHAR(120) NULL,
       photo_url TEXT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )
   `);
-  await query(`CREATE INDEX IF NOT EXISTS idx_students_workspace_owner ON students (workspace_owner_id)`);
-  await query(`CREATE INDEX IF NOT EXISTS idx_students_current_plan ON students (current_plan_id)`);
-  await query(`CREATE INDEX IF NOT EXISTS idx_students_current_seat ON students (current_seat_id)`);
+  await createIndexIfMissing("idx_students_workspace_owner", "students", "workspace_owner_id");
+  await createIndexIfMissing("idx_students_current_plan", "students", "current_plan_id");
+  await createIndexIfMissing("idx_students_current_seat", "students", "current_seat_id");
 
   await query(`
     CREATE TABLE IF NOT EXISTS seats (
@@ -136,12 +143,12 @@ async function ensureTables() {
       seat_number VARCHAR(120) NOT NULL,
       status VARCHAR(32) NOT NULL DEFAULT 'available',
       current_student_id CHAR(36) NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       CONSTRAINT uniq_seat_number_per_workspace UNIQUE (workspace_owner_id, seat_number)
     )
   `);
-  await query(`CREATE INDEX IF NOT EXISTS idx_seats_workspace_owner ON seats (workspace_owner_id)`);
+  await createIndexIfMissing("idx_seats_workspace_owner", "seats", "workspace_owner_id");
 
   await query(`
     CREATE TABLE IF NOT EXISTS payments (
@@ -154,16 +161,16 @@ async function ensureTables() {
       valid_from DATE NULL,
       valid_until DATE NULL,
       payment_mode VARCHAR(32) NOT NULL DEFAULT 'upi',
-      includes_registration BOOLEAN NOT NULL DEFAULT FALSE,
+      includes_registration TINYINT(1) NOT NULL DEFAULT 0,
       notes TEXT NULL,
-      payment_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      payment_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )
   `);
-  await query(`CREATE INDEX IF NOT EXISTS idx_payments_workspace_owner ON payments (workspace_owner_id)`);
-  await query(`CREATE INDEX IF NOT EXISTS idx_payments_student_id ON payments (student_id)`);
-  await query(`CREATE INDEX IF NOT EXISTS idx_payments_plan_id ON payments (plan_id)`);
+  await createIndexIfMissing("idx_payments_workspace_owner", "payments", "workspace_owner_id");
+  await createIndexIfMissing("idx_payments_student_id", "payments", "student_id");
+  await createIndexIfMissing("idx_payments_plan_id", "payments", "plan_id");
 
   await query(`
     CREATE TABLE IF NOT EXISTS expenses (
@@ -175,11 +182,11 @@ async function ensureTables() {
       paid_via VARCHAR(32) NOT NULL DEFAULT 'cash',
       expense_date DATE NULL,
       notes TEXT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )
   `);
-  await query(`CREATE INDEX IF NOT EXISTS idx_expenses_workspace_owner ON expenses (workspace_owner_id)`);
+  await createIndexIfMissing("idx_expenses_workspace_owner", "expenses", "workspace_owner_id");
 
   await query(`
     CREATE TABLE IF NOT EXISTS expense_categories (
@@ -187,12 +194,16 @@ async function ensureTables() {
       workspace_owner_id CHAR(36) NOT NULL,
       name VARCHAR(120) NOT NULL,
       value VARCHAR(120) NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       CONSTRAINT uniq_category_value_per_workspace UNIQUE (workspace_owner_id, value)
     )
   `);
-  await query(`CREATE INDEX IF NOT EXISTS idx_expense_categories_workspace_owner ON expense_categories (workspace_owner_id)`);
+  await createIndexIfMissing(
+    "idx_expense_categories_workspace_owner",
+    "expense_categories",
+    "workspace_owner_id"
+  );
 
   await query(`
     CREATE TABLE IF NOT EXISTS audit_log (
@@ -203,12 +214,12 @@ async function ensureTables() {
       action VARCHAR(120) NOT NULL,
       actor_id CHAR(36) NULL,
       actor_role VARCHAR(120) NULL,
-      metadata JSONB NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      metadata JSON NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
-  await query(`CREATE INDEX IF NOT EXISTS idx_audit_workspace_owner ON audit_log (workspace_owner_id)`);
-  await query(`CREATE INDEX IF NOT EXISTS idx_audit_object ON audit_log (object_type, object_id)`);
+  await createIndexIfMissing("idx_audit_workspace_owner", "audit_log", "workspace_owner_id");
+  await createIndexIfMissing("idx_audit_object", "audit_log", "object_type, object_id");
 
   await query(`
     CREATE TABLE IF NOT EXISTS student_credentials (
@@ -216,11 +227,11 @@ async function ensureTables() {
       student_id CHAR(36) NOT NULL UNIQUE,
       email VARCHAR(255) NOT NULL UNIQUE,
       password_hash VARCHAR(255) NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )
   `);
-  await query(`CREATE INDEX IF NOT EXISTS idx_student_credentials_student ON student_credentials (student_id)`);
+  await createIndexIfMissing("idx_student_credentials_student", "student_credentials", "student_id");
 
   await query(`
     CREATE TABLE IF NOT EXISTS student_payments (
@@ -234,19 +245,18 @@ async function ensureTables() {
       razorpay_payment_id VARCHAR(255) NULL,
       razorpay_signature VARCHAR(255) NULL,
       status VARCHAR(32) NOT NULL DEFAULT 'created',
-      payment_date TIMESTAMP NULL,
+      payment_date DATETIME NULL,
       linked_payment_id CHAR(36) NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )
   `);
-  await query(`CREATE INDEX IF NOT EXISTS idx_student_payments_workspace ON student_payments (workspace_owner_id)`);
-  await query(`CREATE INDEX IF NOT EXISTS idx_student_payments_student ON student_payments (student_id)`);
-  await query(`CREATE INDEX IF NOT EXISTS idx_student_payments_order ON student_payments (razorpay_order_id)`);
+  await createIndexIfMissing("idx_student_payments_workspace", "student_payments", "workspace_owner_id");
+  await createIndexIfMissing("idx_student_payments_student", "student_payments", "student_id");
+  await createIndexIfMissing("idx_student_payments_order", "student_payments", "razorpay_order_id");
 
-  // Add valid_from / valid_until to student_payments if they don't exist yet (safe migration).
-  await query(`ALTER TABLE student_payments ADD COLUMN IF NOT EXISTS valid_from DATE NULL`);
-  await query(`ALTER TABLE student_payments ADD COLUMN IF NOT EXISTS valid_until DATE NULL`);
+  await addColumnIfMissing("student_payments", "valid_from", "DATE NULL");
+  await addColumnIfMissing("student_payments", "valid_until", "DATE NULL");
 
   await query(`
     CREATE TABLE IF NOT EXISTS pending_payments (
@@ -260,12 +270,12 @@ async function ensureTables() {
       payment_mode VARCHAR(32) NOT NULL DEFAULT 'qr',
       status VARCHAR(32) NOT NULL DEFAULT 'pending',
       notes TEXT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )
   `);
-  await query(`CREATE INDEX IF NOT EXISTS idx_pending_payments_workspace ON pending_payments (workspace_owner_id)`);
-  await query(`CREATE INDEX IF NOT EXISTS idx_pending_payments_student ON pending_payments (student_id)`);
+  await createIndexIfMissing("idx_pending_payments_workspace", "pending_payments", "workspace_owner_id");
+  await createIndexIfMissing("idx_pending_payments_student", "pending_payments", "student_id");
 
   // scheduled_payment_requests: Admin-initiated custom or 15-day lumpsum requests sent to student.
   // type: 'custom' | 'half_month' (15-day lumpsum)
@@ -324,32 +334,11 @@ async function ensureTables() {
       invalid_rows INT NOT NULL DEFAULT 0,
       created_by CHAR(36) NULL,
       actor_role VARCHAR(120) NULL,
-      metadata JSONB NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      metadata JSON NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
-  await query(`CREATE INDEX IF NOT EXISTS idx_import_logs_workspace_owner ON import_logs (workspace_owner_id)`);
-
-  // Attach updated_at triggers to every table that has an updated_at column.
-  const tablesWithUpdatedAt = [
-    "admins",
-    "admin_roles",
-    "admin_settings",
-    "plans",
-    "students",
-    "seats",
-    "payments",
-    "expenses",
-    "expense_categories",
-    "student_credentials",
-    "student_payments",
-    "pending_payments",
-    "scheduled_payment_requests",
-    "membership_holds",
-  ];
-  for (const table of tablesWithUpdatedAt) {
-    await attachUpdatedAtTrigger(table);
-  }
+  await createIndexIfMissing("idx_import_logs_workspace_owner", "import_logs", "workspace_owner_id");
 }
 
 async function ensureSeedAdmin() {
@@ -369,7 +358,7 @@ async function ensureSeedAdmin() {
     await query(
       `
         UPDATE admins
-        SET full_name = ?, password_hash = ?, is_owner = TRUE, is_active = TRUE, invite_status = 'active'
+        SET full_name = ?, password_hash = ?, is_owner = 1, is_active = 1, invite_status = 'active'
         WHERE id = ?
       `,
       [config.seedAdminName, passwordHash, existing.id]
@@ -391,7 +380,7 @@ async function ensureSeedAdmin() {
         is_owner,
         is_active,
         invite_status
-      ) VALUES (?, ?, ?, ?, ?, TRUE, TRUE, 'active')
+      ) VALUES (?, ?, ?, ?, ?, 1, 1, 'active')
     `,
     [
       adminId,
@@ -410,11 +399,10 @@ async function ensureSeedData() {
   try {
     owner = await getDefaultWorkspaceOwner();
   } catch {
-    // No workspace owner yet (first boot before admin is seeded) — skip.
+    // No workspace owner yet (first boot before admin is seeded) - skip.
     return;
   }
 
-  // Seed default ₹1000/month plan if none exist for this workspace.
   const existingPlan = await queryOne(
     "SELECT id FROM plans WHERE workspace_owner_id = ? LIMIT 1",
     [owner.id]
@@ -422,34 +410,31 @@ async function ensureSeedData() {
   if (!existingPlan) {
     await query(
       `INSERT INTO plans (id, workspace_owner_id, name, price, duration_days, is_active)
-       VALUES (?, ?, 'Monthly', 1000, 30, TRUE)`,
+       VALUES (?, ?, 'Monthly', 1000, 30, 1)`,
       [randomUUID(), owner.id]
     );
-    logger.info("Seeded default Monthly plan at ₹1000");
+    logger.info("Seeded default Monthly plan at Rs 1000");
   }
 
-  // Seed 64 seats if none exist for this workspace.
   const existingSeat = await queryOne(
     "SELECT id FROM seats WHERE workspace_owner_id = ? LIMIT 1",
     [owner.id]
   );
   if (!existingSeat) {
-    for (let i = 1; i <= 64; i++) {
+    for (let i = 1; i <= 64; i += 1) {
       await query(
         `INSERT INTO seats (id, workspace_owner_id, seat_number, status)
          VALUES (?, ?, ?, 'available')`,
         [randomUUID(), owner.id, String(i)]
       );
     }
-    logger.info("Seeded 64 seats (1–64)");
+    logger.info("Seeded 64 seats (1-64)");
   }
 }
 
 export async function initializeDatabase() {
   await ensureUploadsDir();
-  // Verify DB reachable.
-  await pool.query("SELECT 1");
-  await ensureUpdatedAtTrigger();
+  await query("SELECT 1");
   await ensureTables();
   await ensureSeedAdmin();
   await ensureSeedData();

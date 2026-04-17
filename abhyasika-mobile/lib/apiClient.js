@@ -342,6 +342,13 @@ export function createApiClient() {
       });
     },
 
+    async previewQrPayment(payload) {
+      return request("/student/payments/qr-preview", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
     async listAvailableSeats() {
       return request("/student/seats");
     },
@@ -367,6 +374,27 @@ export function createApiClient() {
         method: "POST",
         body: payload,
       });
+    },
+
+    async listPendingPayments() {
+      return request("/payments/pending");
+    },
+
+    async approvePendingPayment(id) {
+      return request(`/payments/pending/${id}/approve`, {
+        method: "POST",
+      });
+    },
+
+    async rejectPendingPayment(id) {
+      return request(`/payments/pending/${id}/reject`, {
+        method: "POST",
+      });
+    },
+
+    async listScheduledPaymentRequests(status) {
+      const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+      return request(`/payments/scheduled${suffix}`);
     },
   };
 }

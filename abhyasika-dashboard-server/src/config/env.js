@@ -3,7 +3,7 @@ import path from "path";
 
 dotenv.config();
 
-const requiredEnvVars = ["PG_DATABASE", "JWT_SECRET"];
+const requiredEnvVars = ["MYSQL_DATABASE", "JWT_SECRET"];
 
 requiredEnvVars.forEach((key) => {
   if (!process.env[key]) {
@@ -13,12 +13,12 @@ requiredEnvVars.forEach((key) => {
 
 export const config = {
   port: parseInt(process.env.PORT ?? "4000", 10),
-  pgHost: process.env.PG_HOST ?? "localhost",
-  pgPort: parseInt(process.env.PG_PORT ?? "5432", 10),
-  pgUser: process.env.PG_USER ?? "postgres",
-  pgPassword: process.env.PG_PASSWORD ?? "",
-  pgDatabase: process.env.PG_DATABASE,
-  pgSsl: process.env.PG_SSL === "true",
+  mysqlHost: process.env.MYSQL_HOST ?? "localhost",
+  mysqlPort: parseInt(process.env.MYSQL_PORT ?? "3306", 10),
+  mysqlUser: process.env.MYSQL_USER ?? "root",
+  mysqlPassword: process.env.MYSQL_PASSWORD ?? "",
+  mysqlDatabase: process.env.MYSQL_DATABASE,
+  mysqlSsl: process.env.MYSQL_SSL === "true",
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "8h",
   studentJwtExpiresIn: process.env.STUDENT_JWT_EXPIRES_IN ?? "30d",

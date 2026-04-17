@@ -317,7 +317,9 @@ function DashboardView({ students, seats, payments, notifications = [] }) {
                   </div>
                   <LucideIcon
                     name={
-                      item.category === "renewal"
+                      item.category === "approval"
+                        ? "BadgeAlert"
+                        : item.category === "renewal"
                         ? "CalendarClock"
                         : item.category === "payment"
                         ? "CreditCard"

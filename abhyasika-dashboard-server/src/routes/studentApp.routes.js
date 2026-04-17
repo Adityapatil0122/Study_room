@@ -7,6 +7,7 @@ import {
   getMyPayments,
   postCreateOrder,
   postVerifyPayment,
+  postPreviewQrPayment,
   postRequestQrPayment,
   getAvailableSeats,
   postSelectSeat,
@@ -23,6 +24,7 @@ router.get("/subscription", getMySubscription);
 router.get("/payments", getMyPayments);
 router.post("/payments/create-order", postCreateOrder);
 router.post("/payments/verify", postVerifyPayment);
+router.post("/payments/qr-preview", postPreviewQrPayment);
 router.post("/payments/request-qr", postRequestQrPayment);
 router.post("/payments/scheduled-order", postCreateScheduledOrder);
 router.post("/payments/scheduled-verify", postVerifyScheduledPayment);
