@@ -2,10 +2,28 @@ import React, { useMemo, useState } from "react";
 import LucideIcon from "../components/icons/LucideIcon.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 
+// Default dates for 15-day lumpsum: today → today+14
+function halfMonthDates() {
+  const start = new Date();
+  const end = new Date(start.getTime() + 14 * 86400000);
+  const fmt = (d) => d.toISOString().slice(0, 10);
+  return { valid_from: fmt(start), valid_until: fmt(end) };
+}
+
+const EMPTY_SCHED_FORM = {
+  type: "custom",
+  student_id: "",
+  plan_id: "",
+  amount: "",
+  valid_from: "",
+  valid_until: "",
+  notes: "",
+};
+
 function PaymentsView({
   payments,
-  students,
-  plans,
+  students = [],
+  plans = [],
   filters,
   onFiltersChange,
   onOpenModal,
@@ -13,10 +31,17 @@ function PaymentsView({
   pendingPayments = [],
   onApprovePending,
   onRejectPending,
+  scheduledRequests = [],
+  onCreateScheduledRequest,
+  onCancelScheduledRequest,
 }) {
-  const [activeTab, setActiveTab] = useState("payments"); // "payments" | "pending"
+  const [activeTab, setActiveTab] = useState("payments"); // "payments" | "pending" | "scheduled"
   const [approvingId, setApprovingId] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
+  const [cancellingId, setCancellingId] = useState(null);
+  const [schedForm, setSchedForm] = useState(EMPTY_SCHED_FORM);
+  const [schedSaving, setSchedSaving] = useState(false);
+  const [schedError, setSchedError] = useState("");
 
   const handleApprove = async (id) => {
     if (!onApprovePending) return;
@@ -35,6 +60,69 @@ function PaymentsView({
       await onRejectPending(id);
     } finally {
       setRejectingId(null);
+    }
+  };
+
+  const handleCancelScheduled = async (id) => {
+    if (!onCancelScheduledRequest) return;
+    setCancellingId(id);
+    try {
+      await onCancelScheduledRequest(id);
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
+  const handleSchedFormChange = (e) => {
+    const { name, value } = e.target;
+    setSchedForm((prev) => {
+      const updated = { ...prev, [name]: value };
+      // Auto-fill dates for half_month type
+      if (name === "type" && value === "half_month") {
+        const { valid_from, valid_until } = halfMonthDates();
+        // Auto-fill amount from selected plan
+        const plan = plans.find((p) => p.id === updated.plan_id);
+        const halfAmount = plan ? Math.round(Number(plan.price) * 15 / 30) : "";
+        return { ...updated, valid_from, valid_until, amount: String(halfAmount) };
+      }
+      // If plan changes on half_month, recalc amount
+      if (name === "plan_id" && prev.type === "half_month") {
+        const plan = plans.find((p) => p.id === value);
+        const halfAmount = plan ? Math.round(Number(plan.price) * 15 / 30) : "";
+        return { ...updated, amount: String(halfAmount) };
+      }
+      return updated;
+    });
+  };
+
+  const handleSendScheduled = async (e) => {
+    e.preventDefault();
+    if (!onCreateScheduledRequest) return;
+    setSchedError("");
+    if (!schedForm.student_id || !schedForm.plan_id) {
+      setSchedError("Student and plan are required.");
+      return;
+    }
+    if (schedForm.type === "custom" && (!schedForm.amount || !schedForm.valid_from || !schedForm.valid_until)) {
+      setSchedError("Amount and date range are required for custom requests.");
+      return;
+    }
+    setSchedSaving(true);
+    try {
+      await onCreateScheduledRequest({
+        student_id: schedForm.student_id,
+        plan_id: schedForm.plan_id,
+        type: schedForm.type,
+        amount: schedForm.type === "custom" ? Number(schedForm.amount) : undefined,
+        valid_from: schedForm.type === "custom" ? schedForm.valid_from : undefined,
+        valid_until: schedForm.type === "custom" ? schedForm.valid_until : undefined,
+        notes: schedForm.notes || null,
+      });
+      setSchedForm(EMPTY_SCHED_FORM);
+    } catch (err) {
+      setSchedError(err.message ?? "Failed to send request.");
+    } finally {
+      setSchedSaving(false);
     }
   };
   const dateKey = (value) => {
@@ -265,6 +353,22 @@ function PaymentsView({
             </span>
           )}
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("scheduled")}
+          className={`-mb-px flex items-center gap-2 rounded-t-xl border border-b-0 px-4 py-2 text-sm font-semibold transition ${
+            activeTab === "scheduled"
+              ? "border-slate-200 bg-white text-indigo-600"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Scheduled
+          {scheduledRequests.length > 0 && (
+            <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-indigo-500 px-1 text-[10px] font-bold text-white">
+              {scheduledRequests.length}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Pending QR payments panel */}
@@ -346,6 +450,205 @@ function PaymentsView({
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Scheduled Payment Requests panel */}
+      {activeTab === "scheduled" && (
+        <div className="space-y-5">
+          {/* Create new request form */}
+          <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+            <h3 className="mb-4 text-base font-semibold text-slate-800">Send Payment Request to Student</h3>
+            <form onSubmit={handleSendScheduled} className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Student</label>
+                  <select
+                    name="student_id"
+                    value={schedForm.student_id}
+                    onChange={handleSchedFormChange}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                    required
+                  >
+                    <option value="">Select student…</option>
+                    {students.filter((s) => s.is_active).map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}{s.phone ? ` · ${s.phone}` : ""}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Plan</label>
+                  <select
+                    name="plan_id"
+                    value={schedForm.plan_id}
+                    onChange={handleSchedFormChange}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                    required
+                  >
+                    <option value="">Select plan…</option>
+                    {plans.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name} — ₹{Number(p.price).toLocaleString("en-IN")}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Request Type</label>
+                <div className="flex gap-3">
+                  <label className={`flex flex-1 cursor-pointer items-center gap-2 rounded-xl border-2 p-3 transition ${schedForm.type === "custom" ? "border-indigo-500 bg-indigo-50" : "border-slate-200"}`}>
+                    <input type="radio" name="type" value="custom" checked={schedForm.type === "custom"} onChange={handleSchedFormChange} className="accent-indigo-600" />
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">Custom</p>
+                      <p className="text-xs text-slate-500">Admin sets exact amount &amp; dates</p>
+                    </div>
+                  </label>
+                  <label className={`flex flex-1 cursor-pointer items-center gap-2 rounded-xl border-2 p-3 transition ${schedForm.type === "half_month" ? "border-indigo-500 bg-indigo-50" : "border-slate-200"}`}>
+                    <input type="radio" name="type" value="half_month" checked={schedForm.type === "half_month"} onChange={handleSchedFormChange} className="accent-indigo-600" />
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">15-Day Lumpsum</p>
+                      <p className="text-xs text-slate-500">Half-month fee, auto-calculated</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Amount (₹)</label>
+                  <input
+                    type="number"
+                    name="amount"
+                    value={schedForm.amount}
+                    onChange={handleSchedFormChange}
+                    placeholder="e.g. 500"
+                    readOnly={schedForm.type === "half_month"}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 read-only:bg-slate-100 read-only:text-slate-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Valid From</label>
+                  <input
+                    type="date"
+                    name="valid_from"
+                    value={schedForm.valid_from}
+                    onChange={handleSchedFormChange}
+                    readOnly={schedForm.type === "half_month"}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 read-only:bg-slate-100"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Valid Until</label>
+                  <input
+                    type="date"
+                    name="valid_until"
+                    value={schedForm.valid_until}
+                    onChange={handleSchedFormChange}
+                    readOnly={schedForm.type === "half_month"}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 read-only:bg-slate-100"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Note to Student (optional)</label>
+                <input
+                  type="text"
+                  name="notes"
+                  value={schedForm.notes}
+                  onChange={handleSchedFormChange}
+                  placeholder="e.g. Remaining days for April"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              {schedError && (
+                <p className="text-sm text-rose-600">{schedError}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={schedSaving}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-indigo-500 disabled:opacity-60"
+              >
+                {schedSaving ? (
+                  <LucideIcon name="Loader2" className="h-4 w-4 animate-spin" />
+                ) : (
+                  <LucideIcon name="Send" className="h-4 w-4" />
+                )}
+                Send Request to Student
+              </button>
+            </form>
+          </div>
+
+          {/* Active scheduled requests list */}
+          <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+            <h3 className="mb-4 text-base font-semibold text-slate-800">Sent &amp; Pending Requests</h3>
+            {scheduledRequests.length === 0 ? (
+              <p className="py-6 text-center text-sm text-slate-500">No pending scheduled requests.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-100 text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Student</th>
+                      <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Type</th>
+                      <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Amount</th>
+                      <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Period</th>
+                      <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Note</th>
+                      <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Sent</th>
+                      <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide text-slate-500">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {scheduledRequests.map((req) => (
+                      <tr key={req.id} className="hover:bg-slate-50/60">
+                        <td className="px-4 py-3 font-semibold text-slate-800">
+                          {req.student_name}
+                          <div className="text-xs font-normal text-slate-400">{req.student_phone}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                            req.type === "half_month"
+                              ? "bg-violet-50 text-violet-700"
+                              : "bg-indigo-50 text-indigo-700"
+                          }`}>
+                            {req.type === "half_month" ? "15-Day" : "Custom"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-emerald-600">
+                          ₹{Number(req.amount).toLocaleString("en-IN")}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600 text-xs">
+                          {req.valid_from} → {req.valid_until}
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 text-xs">{req.notes || "—"}</td>
+                        <td className="px-4 py-3 text-xs text-slate-400">
+                          {req.created_at ? new Date(req.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            type="button"
+                            disabled={cancellingId === req.id}
+                            onClick={() => handleCancelScheduled(req.id)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50"
+                          >
+                            {cancellingId === req.id
+                              ? <LucideIcon name="Loader2" className="h-3 w-3 animate-spin" />
+                              : <LucideIcon name="XCircle" className="h-3 w-3" />}
+                            Cancel
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

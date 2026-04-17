@@ -79,6 +79,7 @@ function App() {
   const [expenses, setExpenses] = useState([]);
   const [expenseCategories, setExpenseCategories] = useState([]);
   const [pendingPayments, setPendingPayments] = useState([]);
+  const [scheduledRequests, setScheduledRequests] = useState([]);
   const [branding, setBranding] = useState({
     logoUrl: "/images/abhyasika-logo.png",
     logoPath: "",
@@ -485,6 +486,7 @@ const notificationRef = useRef(null);
           expenseData,
           categoryData,
           pendingData,
+          scheduledData,
         ] =
           await Promise.all([
             api.listPlans(),
@@ -494,6 +496,7 @@ const notificationRef = useRef(null);
             api.listExpenses(),
             api.listExpenseCategories ? api.listExpenseCategories() : [],
             api.listPendingPayments ? api.listPendingPayments() : [],
+            api.listScheduledPaymentRequests ? api.listScheduledPaymentRequests("sent") : [],
           ]);
         if (!mounted) return;
         setPlans(sortPlans(planData));
@@ -503,6 +506,7 @@ const notificationRef = useRef(null);
         setExpenses(expenseData);
         setExpenseCategories(categoryData || []);
         setPendingPayments(pendingData || []);
+        setScheduledRequests(scheduledData || []);
         setError("");
       } catch (err) {
         if (!mounted) return;
@@ -843,6 +847,60 @@ const notificationRef = useRef(null);
       showToast("Payment request rejected.");
     } catch (err) {
       const message = err.message ?? "Failed to reject payment.";
+      setError(message);
+      showToast(message, "error");
+    }
+  };
+
+  const handleHoldMembership = async (studentId, notes) => {
+    try {
+      setError("");
+      const { student } = await api.holdStudentMembership(studentId, notes);
+      setStudents((prev) => prev.map((s) => (s.id === studentId ? student : s)));
+      showToast("Membership put on hold.");
+    } catch (err) {
+      const message = err.message ?? "Failed to hold membership.";
+      setError(message);
+      showToast(message, "error");
+    }
+  };
+
+  const handleResumeMembership = async (studentId, notes) => {
+    try {
+      setError("");
+      const student = await api.resumeStudentMembership(studentId, notes);
+      setStudents((prev) => prev.map((s) => (s.id === studentId ? student : s)));
+      showToast("Membership resumed. Renewal date extended by hold duration.");
+    } catch (err) {
+      const message = err.message ?? "Failed to resume membership.";
+      setError(message);
+      showToast(message, "error");
+    }
+  };
+
+  const handleCreateScheduledRequest = async (payload) => {
+    try {
+      setError("");
+      const req = await api.createScheduledPaymentRequest(payload);
+      setScheduledRequests((prev) => [req, ...prev]);
+      showToast("Payment request sent to student.");
+      return req;
+    } catch (err) {
+      const message = err.message ?? "Failed to send payment request.";
+      setError(message);
+      showToast(message, "error");
+      throw err;
+    }
+  };
+
+  const handleCancelScheduledRequest = async (requestId) => {
+    try {
+      setError("");
+      await api.cancelScheduledPaymentRequest(requestId);
+      setScheduledRequests((prev) => prev.filter((r) => r.id !== requestId));
+      showToast("Payment request cancelled.");
+    } catch (err) {
+      const message = err.message ?? "Failed to cancel request.";
       setError(message);
       showToast(message, "error");
     }
@@ -1228,6 +1286,8 @@ const notificationRef = useRef(null);
             onNavigate={navigateTo}
             payments={payments}
             roles={roles}
+            onHoldMembership={handleHoldMembership}
+            onResumeMembership={handleResumeMembership}
           />
         )}
         {canAccessView("seats") && activeView === "seats" && (
@@ -1249,6 +1309,11 @@ const notificationRef = useRef(null);
             pendingPayments={pendingPayments}
             onApprovePending={handleApprovePendingPayment}
             onRejectPending={handleRejectPendingPayment}
+            scheduledRequests={scheduledRequests}
+            onCreateScheduledRequest={handleCreateScheduledRequest}
+            onCancelScheduledRequest={handleCancelScheduledRequest}
+            students={students}
+            plans={plans}
           />
         )}
         {canAccessView("renewals") && activeView === "renewals" && (

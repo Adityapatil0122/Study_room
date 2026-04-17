@@ -5,6 +5,9 @@ import {
   listPendingPayments,
   approvePendingPayment,
   rejectPendingPayment,
+  createScheduledPaymentRequest,
+  listScheduledPaymentRequests,
+  cancelScheduledPaymentRequest,
 } from "../services/payments.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
@@ -51,5 +54,29 @@ export const approvePending = asyncHandler(async (req, res) => {
 export const rejectPending = asyncHandler(async (req, res) => {
   const audit = { actor_id: req.auth.adminId, actor_role: req.auth.role ?? "Admin" };
   const data = await rejectPendingPayment(req.auth.workspaceOwnerId, req.params.id, audit);
+  res.json({ data });
+});
+
+// ─── Scheduled Payment Requests (Admin → Student) ────────────────────────────
+
+export const postScheduledRequest = asyncHandler(async (req, res) => {
+  const audit = { actor_id: req.auth.adminId, actor_role: req.auth.role ?? "Admin" };
+  const data = await createScheduledPaymentRequest(
+    req.auth.workspaceOwnerId,
+    req.body ?? {},
+    audit
+  );
+  res.status(201).json({ data });
+});
+
+export const getScheduledRequests = asyncHandler(async (req, res) => {
+  const { status } = req.query;
+  const data = await listScheduledPaymentRequests(req.auth.workspaceOwnerId, { status });
+  res.json({ data });
+});
+
+export const deleteScheduledRequest = asyncHandler(async (req, res) => {
+  const audit = { actor_id: req.auth.adminId, actor_role: req.auth.role ?? "Admin" };
+  const data = await cancelScheduledPaymentRequest(req.auth.workspaceOwnerId, req.params.id, audit);
   res.json({ data });
 });

@@ -352,5 +352,21 @@ export function createApiClient() {
         body: { seat_id: seatId },
       });
     },
+
+    // Pay an admin-scheduled request via Razorpay (create order)
+    async createScheduledOrder(payload) {
+      return request("/student/payments/scheduled-order", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
+    // Verify payment for an admin-scheduled request
+    async verifyScheduledPayment(payload) {
+      return request("/student/payments/scheduled-verify", {
+        method: "POST",
+        body: payload,
+      });
+    },
   };
 }

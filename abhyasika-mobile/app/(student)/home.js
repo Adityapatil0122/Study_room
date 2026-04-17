@@ -91,6 +91,51 @@ export default function StudentHomeScreen() {
 
                         <SubscriptionCard subscription={subscription} />
 
+                        {/* Membership On-Hold banner */}
+                        {subscription?.membership_status === "on_hold" ? (
+                            <View className="bg-amber-50 border border-amber-300 rounded-xl p-4 mt-4">
+                                <Text className="text-amber-700 font-bold text-sm mb-1">
+                                    ⏸ Membership On Hold
+                                </Text>
+                                <Text className="text-amber-600 text-xs">
+                                    Your membership is paused since{" "}
+                                    {subscription.hold_start
+                                        ? new Date(subscription.hold_start).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+                                        : "recently"}.
+                                </Text>
+                                <Text className="text-amber-500 text-xs mt-1">
+                                    Your renewal date is frozen. When you return, the days you were away will be added back.
+                                </Text>
+                            </View>
+                        ) : null}
+
+                        {/* Scheduled payment request from admin */}
+                        {subscription?.scheduled_request && subscription?.membership_status !== "on_hold" ? (
+                            <View className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 mt-4">
+                                <Text className="text-indigo-700 font-bold text-sm mb-1">
+                                    📋 Payment Request from Admin
+                                </Text>
+                                <Text className="text-indigo-800 text-sm">
+                                    ₹{Number(subscription.scheduled_request.amount).toLocaleString("en-IN")}
+                                    {" "}— {subscription.scheduled_request.type === "half_month" ? "15-Day Lumpsum" : "Custom Amount"}
+                                </Text>
+                                <Text className="text-indigo-600 text-xs mt-0.5">
+                                    {subscription.scheduled_request.valid_from} → {subscription.scheduled_request.valid_until}
+                                </Text>
+                                {subscription.scheduled_request.notes ? (
+                                    <Text className="text-indigo-500 text-xs mt-1 italic">
+                                        "{subscription.scheduled_request.notes}"
+                                    </Text>
+                                ) : null}
+                                <TouchableOpacity
+                                    onPress={() => router.push("/(student)/pay")}
+                                    className="mt-3 bg-indigo-600 rounded-lg py-2 items-center"
+                                >
+                                    <Text className="text-white font-bold text-sm">Pay Now →</Text>
+                                </TouchableOpacity>
+                            </View>
+                        ) : null}
+
                         {/* Pending QR payment badge */}
                         {subscription?.pending_qr ? (
                             <View className="bg-amber-50 border border-amber-300 rounded-xl p-4 mt-4">
@@ -139,20 +184,22 @@ export default function StudentHomeScreen() {
                             </View>
                         ) : null}
 
-                        <TouchableOpacity
-                            onPress={() => router.push("/(student)/pay")}
-                            className="bg-indigo-600 rounded-xl p-5 mt-4 flex-row items-center justify-between"
-                        >
-                            <View>
-                                <Text className="text-white font-bold text-lg">
-                                    {subscription?.plan ? "Renew Plan" : "Make a Payment"}
-                                </Text>
-                                <Text className="text-indigo-100 text-sm mt-1">
-                                    Pay online or via UPI QR
-                                </Text>
-                            </View>
-                            <Text className="text-white text-3xl">→</Text>
-                        </TouchableOpacity>
+                        {subscription?.membership_status !== "on_hold" ? (
+                            <TouchableOpacity
+                                onPress={() => router.push("/(student)/pay")}
+                                className="bg-indigo-600 rounded-xl p-5 mt-4 flex-row items-center justify-between"
+                            >
+                                <View>
+                                    <Text className="text-white font-bold text-lg">
+                                        {subscription?.plan ? "Renew Plan" : "Make a Payment"}
+                                    </Text>
+                                    <Text className="text-indigo-100 text-sm mt-1">
+                                        Pay online or via UPI QR
+                                    </Text>
+                                </View>
+                                <Text className="text-white text-3xl">→</Text>
+                            </TouchableOpacity>
+                        ) : null}
 
                         <View className="mt-6">
                             <Text className="text-lg font-semibold text-gray-900 mb-3">

@@ -6,6 +6,9 @@ import {
   listPending,
   approvePending,
   rejectPending,
+  postScheduledRequest,
+  getScheduledRequests,
+  deleteScheduledRequest,
 } from "../controllers/payments.controller.js";
 
 const router = Router();
@@ -16,5 +19,8 @@ router.post("/", postPayment);
 router.get("/pending", listPending);
 router.post("/pending/:id/approve", approvePending);
 router.post("/pending/:id/reject", rejectPending);
+router.get("/scheduled", getScheduledRequests);
+router.post("/scheduled", postScheduledRequest);
+router.delete("/scheduled/:id", deleteScheduledRequest);
 
 export default router;

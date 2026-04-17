@@ -5,6 +5,9 @@ import {
   toggleStudentActive,
   importStudents,
   listStudentHistory,
+  holdMembership,
+  resumeMembership,
+  listStudentHolds,
 } from "../services/students.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { buildPublicFileUrl, toRelativeUploadPath } from "../utils/files.js";
@@ -86,4 +89,31 @@ export const postUploadStudentProof = asyncHandler(async (req, res) => {
       size: req.file.size,
     },
   });
+});
+
+export const postHoldMembership = asyncHandler(async (req, res) => {
+  const audit = { actor_id: req.auth.adminId, actor_role: req.auth.role ?? "Admin" };
+  const data = await holdMembership(
+    req.auth.workspaceOwnerId,
+    req.params.id,
+    req.body?.notes ?? null,
+    audit
+  );
+  res.json({ data });
+});
+
+export const postResumeMembership = asyncHandler(async (req, res) => {
+  const audit = { actor_id: req.auth.adminId, actor_role: req.auth.role ?? "Admin" };
+  const data = await resumeMembership(
+    req.auth.workspaceOwnerId,
+    req.params.id,
+    req.body?.notes ?? null,
+    audit
+  );
+  res.json({ data });
+});
+
+export const getStudentHolds = asyncHandler(async (req, res) => {
+  const data = await listStudentHolds(req.auth.workspaceOwnerId, req.params.id);
+  res.json({ data });
 });

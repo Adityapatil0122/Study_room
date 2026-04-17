@@ -179,6 +179,16 @@ export async function getSubscription(studentId, workspaceOwnerId) {
     [studentId]
   );
 
+  // Check for a pending scheduled payment request from admin
+  const scheduledRequest = await queryOne(
+    `SELECT spr.*, p.name AS plan_name
+     FROM scheduled_payment_requests spr
+     JOIN plans p ON p.id = spr.plan_id
+     WHERE spr.student_id = ? AND spr.status = 'sent'
+     ORDER BY spr.created_at DESC LIMIT 1`,
+    [studentId]
+  );
+
   return {
     plan,
     seat,
@@ -187,13 +197,26 @@ export async function getSubscription(studentId, workspaceOwnerId) {
     registration_paid: student.registration_paid,
     fee_plan_type: student.fee_plan_type,
     preferred_shift: student.preferred_shift,
+    membership_status: student.membership_status ?? "active",
+    hold_start: toDateString(student.hold_start),
     pending_qr: pendingQr
       ? {
           id: pendingQr.id,
-          amount: pendingQr.amount,
+          amount: Number(pendingQr.amount),
           valid_from: toDateString(pendingQr.valid_from),
           valid_until: toDateString(pendingQr.valid_until),
           submitted_at: pendingQr.created_at,
+        }
+      : null,
+    scheduled_request: scheduledRequest
+      ? {
+          id: scheduledRequest.id,
+          type: scheduledRequest.type,
+          amount: Number(scheduledRequest.amount),
+          valid_from: toDateString(scheduledRequest.valid_from),
+          valid_until: toDateString(scheduledRequest.valid_until),
+          plan_name: scheduledRequest.plan_name,
+          notes: scheduledRequest.notes,
         }
       : null,
   };
@@ -483,4 +506,96 @@ export async function selectSeatForStudent(studentId, workspaceOwnerId, seatId) 
     actor_id: studentId,
     actor_role: "Student",
   });
+}
+
+/**
+ * Student pays a scheduled request (from admin) via Razorpay.
+ * Creates a Razorpay order pre-filled with the exact amount + dates from the request.
+ */
+export async function createRazorpayOrderForScheduledRequest(studentId, workspaceOwnerId, requestId) {
+  const req = await queryOne(
+    `SELECT spr.*, p.price AS plan_price
+     FROM scheduled_payment_requests spr
+     JOIN plans p ON p.id = spr.plan_id
+     WHERE spr.id = ? AND spr.workspace_owner_id = ?
+     LIMIT 1`,
+    [requestId, workspaceOwnerId]
+  );
+  if (!req) throw new AppError("Scheduled payment request not found", 404);
+  if (req.student_id !== studentId) throw new AppError("Not authorised", 403);
+  if (req.status !== "sent") throw new AppError(`Request is already ${req.status}`, 400);
+
+  const amountPaise = Math.round(Number(req.amount) * 100);
+  const order = await createOrder({ amount: amountPaise, currency: "INR" });
+
+  const id = randomUUID();
+  await query(
+    `INSERT INTO student_payments
+       (id, workspace_owner_id, student_id, plan_id,
+        amount, currency, razorpay_order_id, status,
+        valid_from, valid_until)
+     VALUES (?, ?, ?, ?, ?, 'INR', ?, 'created', ?, ?)`,
+    [id, workspaceOwnerId, studentId, req.plan_id,
+     req.amount, order.id,
+     toDateString(req.valid_from), toDateString(req.valid_until)]
+  );
+
+  return {
+    id,
+    razorpay_order_id: order.id,
+    razorpay_key_id: getPublicKeyId(),
+    amount: amountPaise,
+    currency: "INR",
+    valid_from: toDateString(req.valid_from),
+    valid_until: toDateString(req.valid_until),
+    scheduled_request_id: requestId,
+    type: req.type,
+  };
+}
+
+/**
+ * After Razorpay verify, fulfill the scheduled request and mark it paid.
+ */
+export async function verifyAndFulfillScheduledRequest(
+  studentId,
+  workspaceOwnerId,
+  { razorpay_order_id, razorpay_payment_id, razorpay_signature, scheduled_request_id }
+) {
+  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+    throw new AppError("razorpay_order_id, razorpay_payment_id, and razorpay_signature are required", 400);
+  }
+
+  const valid = verifySignature({ orderId: razorpay_order_id, paymentId: razorpay_payment_id, signature: razorpay_signature });
+  if (!valid) throw new AppError("Invalid payment signature", 400);
+
+  const pending = await queryOne(
+    `SELECT * FROM student_payments
+     WHERE razorpay_order_id = ? AND student_id = ? AND workspace_owner_id = ?
+     LIMIT 1`,
+    [razorpay_order_id, studentId, workspaceOwnerId]
+  );
+  if (!pending) throw new AppError("Payment order not found", 404);
+  if (pending.status === "paid") return { status: "paid", student_payment_id: pending.id };
+
+  // Use fulfillScheduledPaymentRequest from payments.service to write the payment + update student
+  const { fulfillScheduledPaymentRequest } = await import("./payments.service.js");
+  const result = await fulfillScheduledPaymentRequest(
+    workspaceOwnerId,
+    scheduled_request_id,
+    "razorpay",
+    { actor_id: studentId, actor_role: "Student" }
+  );
+
+  await query(
+    `UPDATE student_payments
+     SET status = 'paid',
+         razorpay_payment_id = ?,
+         razorpay_signature = ?,
+         payment_date = CURRENT_TIMESTAMP,
+         linked_payment_id = ?
+     WHERE id = ?`,
+    [razorpay_payment_id, razorpay_signature, result.payment.id, pending.id]
+  );
+
+  return { status: "paid", student_payment_id: pending.id, ...result };
 }

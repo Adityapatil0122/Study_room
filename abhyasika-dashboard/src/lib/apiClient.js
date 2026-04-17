@@ -293,6 +293,37 @@ export function createApiClient() {
       return request(`/payments/pending/${id}/reject`, { method: "POST" });
     },
 
+    async listScheduledPaymentRequests(status) {
+      const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+      return request(`/payments/scheduled${suffix}`);
+    },
+
+    async createScheduledPaymentRequest(payload) {
+      return request("/payments/scheduled", { method: "POST", body: payload });
+    },
+
+    async cancelScheduledPaymentRequest(id) {
+      return request(`/payments/scheduled/${id}`, { method: "DELETE" });
+    },
+
+    async holdStudentMembership(studentId, notes) {
+      return request(`/students/${studentId}/hold`, {
+        method: "POST",
+        body: notes ? { notes } : {},
+      });
+    },
+
+    async resumeStudentMembership(studentId, notes) {
+      return request(`/students/${studentId}/resume`, {
+        method: "POST",
+        body: notes ? { notes } : {},
+      });
+    },
+
+    async getStudentHolds(studentId) {
+      return request(`/students/${studentId}/holds`);
+    },
+
     async importExpenses(rows, audit) {
       return request("/expenses/import", {
         method: "POST",

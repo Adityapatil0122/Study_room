@@ -37,18 +37,32 @@ export default function PayScreen() {
     const [paymentMethod, setPaymentMethod] = useState(null);
     const [processingRazorpay, setProcessingRazorpay] = useState(false);
     const [processingQr, setProcessingQr] = useState(false);
+    const [processingScheduled, setProcessingScheduled] = useState(false);
 
     // After QR request is created
     const [qrResult, setQrResult] = useState(null);
+
+    // Subscription data (includes scheduled_request if admin sent one)
+    const [subscription, setSubscription] = useState(null);
 
     const isRenewal = Boolean(student?.renewal_date);
 
     const load = useCallback(async () => {
         try {
             setError("");
-            const data = await api.listStudentPlans();
-            setPlans(data ?? []);
-            if (data?.[0]) setSelectedPlanId(data[0].id);
+            const [plansData, subData] = await Promise.all([
+                api.listStudentPlans(),
+                api.getStudentSubscription(),
+            ]);
+            setPlans(plansData ?? []);
+            setSubscription(subData);
+            // Pre-select plan from scheduled request if exists, else first plan
+            if (subData?.scheduled_request?.plan_id) {
+                const matchPlan = (plansData ?? []).find((p) => p.id === subData.scheduled_request.plan_id);
+                setSelectedPlanId(matchPlan?.id ?? plansData?.[0]?.id ?? null);
+            } else if (plansData?.[0]) {
+                setSelectedPlanId(plansData[0].id);
+            }
         } catch (err) {
             setError(err?.message ?? "Failed to load plans");
         } finally {
@@ -123,6 +137,49 @@ export default function PayScreen() {
             Alert.alert("Payment failed", msg);
         } finally {
             setProcessingRazorpay(false);
+        }
+    };
+
+    // ------------------------------------------------------------------
+    // Scheduled request payment via Razorpay
+    // ------------------------------------------------------------------
+    const handleScheduledPay = async () => {
+        const req = subscription?.scheduled_request;
+        if (!req) return;
+        setProcessingScheduled(true);
+        try {
+            const order = await api.createScheduledOrder({ request_id: req.id });
+            const options = {
+                description: `${req.type === "half_month" ? "15-Day" : "Custom"} Payment`,
+                currency: order.currency,
+                key: order.razorpay_key_id,
+                amount: order.amount,
+                name: "Abhyasika Study Room",
+                order_id: order.razorpay_order_id,
+                prefill: {
+                    name: student?.name ?? "",
+                    email: student?.email ?? "",
+                    contact: student?.phone ?? "",
+                },
+                theme: { color: "#4f46e5" },
+            };
+            const result = await RazorpayCheckout.open(options);
+            await api.verifyScheduledPayment({
+                razorpay_order_id: result.razorpay_order_id,
+                razorpay_payment_id: result.razorpay_payment_id,
+                razorpay_signature: result.razorpay_signature,
+                scheduled_request_id: req.id,
+            });
+            Alert.alert(
+                "Payment successful",
+                `Your payment of ₹${Number(req.amount).toLocaleString("en-IN")} has been recorded.\nValid: ${fmtDate(req.valid_from)} – ${fmtDate(req.valid_until)}`,
+                [{ text: "OK", onPress: () => router.replace("/(student)/home") }]
+            );
+        } catch (err) {
+            const msg = err?.description ?? err?.message ?? "Payment failed. Please try again.";
+            Alert.alert("Payment failed", msg);
+        } finally {
+            setProcessingScheduled(false);
         }
     };
 
@@ -257,9 +314,43 @@ export default function PayScreen() {
                     </View>
                 ) : (
                     <>
+                        {/* Scheduled request from admin */}
+                        {subscription?.scheduled_request ? (
+                            <View className="bg-indigo-50 border-2 border-indigo-400 rounded-xl p-4 mb-5">
+                                <Text className="text-indigo-700 font-bold text-base mb-1">
+                                    📋 Admin Payment Request
+                                </Text>
+                                <Text className="text-indigo-900 text-sm">
+                                    ₹{Number(subscription.scheduled_request.amount).toLocaleString("en-IN")}
+                                    {" "}· {subscription.scheduled_request.type === "half_month" ? "15-Day Lumpsum" : "Custom Amount"}
+                                </Text>
+                                <Text className="text-indigo-600 text-xs mt-0.5">
+                                    {fmtDate(subscription.scheduled_request.valid_from)} – {fmtDate(subscription.scheduled_request.valid_until)}
+                                </Text>
+                                {subscription.scheduled_request.notes ? (
+                                    <Text className="text-indigo-500 text-xs mt-1 italic">
+                                        "{subscription.scheduled_request.notes}"
+                                    </Text>
+                                ) : null}
+                                <TouchableOpacity
+                                    onPress={handleScheduledPay}
+                                    disabled={processingScheduled}
+                                    className={`mt-3 bg-indigo-600 rounded-xl py-3 items-center ${processingScheduled ? "opacity-70" : ""}`}
+                                >
+                                    {processingScheduled ? (
+                                        <ActivityIndicator color="#fff" />
+                                    ) : (
+                                        <Text className="text-white font-bold text-sm">
+                                            Pay ₹{Number(subscription.scheduled_request.amount).toLocaleString("en-IN")} via Razorpay
+                                        </Text>
+                                    )}
+                                </TouchableOpacity>
+                            </View>
+                        ) : null}
+
                         {/* Plan list */}
                         <Text className="text-sm text-gray-700 mb-3 font-semibold uppercase tracking-wide">
-                            Select Plan
+                            {subscription?.scheduled_request ? "Or Choose a Different Plan" : "Select Plan"}
                         </Text>
                         {plans.map((plan) => (
                             <TouchableOpacity

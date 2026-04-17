@@ -267,6 +267,51 @@ async function ensureTables() {
   await query(`CREATE INDEX IF NOT EXISTS idx_pending_payments_workspace ON pending_payments (workspace_owner_id)`);
   await query(`CREATE INDEX IF NOT EXISTS idx_pending_payments_student ON pending_payments (student_id)`);
 
+  // scheduled_payment_requests: Admin-initiated custom or 15-day lumpsum requests sent to student.
+  // type: 'custom' | 'half_month' (15-day lumpsum)
+  // status: 'sent' -> 'paid' | 'rejected' | 'cancelled'
+  await query(`
+    CREATE TABLE IF NOT EXISTS scheduled_payment_requests (
+      id CHAR(36) PRIMARY KEY,
+      workspace_owner_id CHAR(36) NOT NULL,
+      student_id CHAR(36) NOT NULL,
+      plan_id CHAR(36) NOT NULL,
+      type VARCHAR(32) NOT NULL DEFAULT 'custom',
+      amount NUMERIC(10,2) NOT NULL,
+      valid_from DATE NOT NULL,
+      valid_until DATE NOT NULL,
+      notes TEXT NULL,
+      status VARCHAR(32) NOT NULL DEFAULT 'sent',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_sched_pay_workspace ON scheduled_payment_requests (workspace_owner_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_sched_pay_student ON scheduled_payment_requests (student_id)`);
+
+  // membership_holds: tracks a paused membership period for a student.
+  // When on hold, renewal_date is frozen; days_on_hold is credited back on resume.
+  await query(`
+    CREATE TABLE IF NOT EXISTS membership_holds (
+      id CHAR(36) PRIMARY KEY,
+      workspace_owner_id CHAR(36) NOT NULL,
+      student_id CHAR(36) NOT NULL,
+      hold_start DATE NOT NULL,
+      hold_end DATE NULL,
+      resumed_at TIMESTAMP NULL,
+      notes TEXT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_holds_workspace ON membership_holds (workspace_owner_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_holds_student ON membership_holds (student_id)`);
+
+  // Safe migrations: add hold columns to students table.
+  await query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS membership_status VARCHAR(32) NOT NULL DEFAULT 'active'`);
+  await query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS hold_start DATE NULL`);
+  await query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS hold_renewal_snapshot DATE NULL`);
+
   await query(`
     CREATE TABLE IF NOT EXISTS import_logs (
       id CHAR(36) PRIMARY KEY,
@@ -299,6 +344,8 @@ async function ensureTables() {
     "student_credentials",
     "student_payments",
     "pending_payments",
+    "scheduled_payment_requests",
+    "membership_holds",
   ];
   for (const table of tablesWithUpdatedAt) {
     await attachUpdatedAtTrigger(table);

@@ -4,6 +4,7 @@ import { query, queryOne, withTransaction } from "../db/connection.js";
 import { toBoolean, toDateString } from "../utils/data.js";
 import { recordAudit } from "./audit.service.js";
 import { updateStudentPlan } from "./students.service.js";
+// Note: recordAudit is re-used in scheduled payment helpers below.
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -278,4 +279,164 @@ export async function rejectPendingPayment(workspaceOwnerId, pendingId, audit = 
   );
 
   return { id: pendingId, status: "rejected" };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scheduled Payment Requests (Admin → Student)
+// type: 'custom' | 'half_month'
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Admin creates a scheduled payment request for a student.
+ * type 'custom'     – admin sets exact amount + date range (e.g. remaining days this month).
+ * type 'half_month' – 15-day lumpsum; amount = round(plan.price * 15 / 30).
+ */
+export async function createScheduledPaymentRequest(workspaceOwnerId, payload, audit = null) {
+  const { student_id, plan_id, type = "custom", notes } = payload;
+
+  const student = await queryOne(
+    "SELECT * FROM students WHERE id = ? AND workspace_owner_id = ? LIMIT 1",
+    [student_id, workspaceOwnerId]
+  );
+  if (!student) throw new AppError("Student not found", 404);
+
+  const plan = await queryOne(
+    "SELECT * FROM plans WHERE id = ? AND workspace_owner_id = ? LIMIT 1",
+    [plan_id, workspaceOwnerId]
+  );
+  if (!plan) throw new AppError("Plan not found", 404);
+
+  let amount;
+  let valid_from;
+  let valid_until;
+
+  if (type === "half_month") {
+    // 15-day lumpsum: start from today, end = today + 14 days.
+    const planPrice = Number(plan.price);
+    amount = Math.round(planPrice * 15 / 30);
+    const startDate = new Date();
+    const endDate = new Date(startDate.getTime() + 14 * 86400000);
+    valid_from = startDate.toISOString().slice(0, 10);
+    valid_until = endDate.toISOString().slice(0, 10);
+  } else {
+    // custom: admin provides all values.
+    if (!payload.amount || !payload.valid_from || !payload.valid_until) {
+      throw new AppError("Custom request requires amount, valid_from, and valid_until", 400);
+    }
+    amount = Number(payload.amount);
+    valid_from = payload.valid_from;
+    valid_until = payload.valid_until;
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new AppError("Amount must be zero or greater", 400);
+    }
+  }
+
+  const id = randomUUID();
+  await query(
+    `INSERT INTO scheduled_payment_requests
+       (id, workspace_owner_id, student_id, plan_id, type, amount, valid_from, valid_until, notes, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent')`,
+    [id, workspaceOwnerId, student_id, plan_id, type, amount, valid_from, valid_until, notes ?? null]
+  );
+
+  await recordAudit(
+    {
+      workspaceOwnerId,
+      objectType: "payments",
+      objectId: id,
+      action: "scheduled-request-created",
+      actorId: audit?.actor_id,
+      actorRole: audit?.actor_role,
+      metadata: { student_id, plan_id, type, amount, valid_from, valid_until },
+    }
+  );
+
+  return {
+    id, student_id, plan_id, type, amount,
+    valid_from, valid_until, notes: notes ?? null, status: "sent",
+    student_name: student.name, student_phone: student.phone, plan_name: plan.name,
+  };
+}
+
+/**
+ * List all pending (status='sent') scheduled requests for a workspace.
+ */
+export async function listScheduledPaymentRequests(workspaceOwnerId, { status } = {}) {
+  const filters = ["spr.workspace_owner_id = ?"];
+  const params = [workspaceOwnerId];
+  if (status) {
+    filters.push("spr.status = ?");
+    params.push(status);
+  }
+
+  const rows = await query(
+    `SELECT spr.*,
+            s.name  AS student_name,
+            s.phone AS student_phone,
+            p.name  AS plan_name
+     FROM scheduled_payment_requests spr
+     JOIN students s ON s.id = spr.student_id
+     JOIN plans    p ON p.id = spr.plan_id
+     WHERE ${filters.join(" AND ")}
+     ORDER BY spr.created_at DESC`,
+    params
+  );
+  return rows.map((r) => ({
+    ...r,
+    amount: Number(r.amount),
+    valid_from: toDateString(r.valid_from),
+    valid_until: toDateString(r.valid_until),
+  }));
+}
+
+/**
+ * Admin cancels a scheduled request before student pays.
+ */
+export async function cancelScheduledPaymentRequest(workspaceOwnerId, requestId, audit = null) {
+  const req = await queryOne(
+    "SELECT * FROM scheduled_payment_requests WHERE id = ? AND workspace_owner_id = ? LIMIT 1",
+    [requestId, workspaceOwnerId]
+  );
+  if (!req) throw new AppError("Scheduled request not found", 404);
+  if (req.status !== "sent") throw new AppError(`Request is already ${req.status}`, 400);
+
+  await query(
+    "UPDATE scheduled_payment_requests SET status = 'cancelled' WHERE id = ?",
+    [requestId]
+  );
+  return { id: requestId, status: "cancelled" };
+}
+
+/**
+ * Student pays a scheduled request via Razorpay (called after payment verify).
+ * Marks the request as 'paid' and calls createPayment().
+ */
+export async function fulfillScheduledPaymentRequest(workspaceOwnerId, requestId, paymentMode, audit = null) {
+  const req = await queryOne(
+    "SELECT * FROM scheduled_payment_requests WHERE id = ? AND workspace_owner_id = ? LIMIT 1",
+    [requestId, workspaceOwnerId]
+  );
+  if (!req) throw new AppError("Scheduled request not found", 404);
+  if (req.status !== "sent") throw new AppError(`Request is already ${req.status}`, 400);
+
+  const { payment, student } = await createPayment(
+    workspaceOwnerId,
+    {
+      student_id: req.student_id,
+      plan_id: req.plan_id,
+      amount_paid: Number(req.amount),
+      valid_from: toDateString(req.valid_from),
+      valid_until: toDateString(req.valid_until),
+      payment_mode: paymentMode ?? "razorpay",
+      notes: req.notes ?? `Scheduled ${req.type} payment`,
+    },
+    audit
+  );
+
+  await query(
+    "UPDATE scheduled_payment_requests SET status = 'paid' WHERE id = ?",
+    [requestId]
+  );
+
+  return { payment, student, request_id: requestId };
 }

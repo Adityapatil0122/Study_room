@@ -7,6 +7,9 @@ import {
   postUploadStudentProof,
   putStudent,
   patchStudentToggleActive,
+  postHoldMembership,
+  postResumeMembership,
+  getStudentHolds,
 } from "../controllers/students.controller.js";
 import { uploadStudentProof } from "../middleware/upload.js";
 
@@ -17,6 +20,9 @@ router.post("/upload-id-proof", uploadStudentProof.single("file"), postUploadStu
 router.post("/import", postImportStudents);
 router.post("/", postStudent);
 router.get("/:id/history", getStudentHistory);
+router.get("/:id/holds", getStudentHolds);
+router.post("/:id/hold", postHoldMembership);
+router.post("/:id/resume", postResumeMembership);
 router.put("/:id", putStudent);
 router.patch("/:id/toggle-active", patchStudentToggleActive);
 

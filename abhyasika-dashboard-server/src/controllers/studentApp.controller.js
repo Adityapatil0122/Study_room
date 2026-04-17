@@ -10,6 +10,8 @@ import {
   createQrPaymentRequest,
   listSeatsForStudent,
   selectSeatForStudent,
+  createRazorpayOrderForScheduledRequest,
+  verifyAndFulfillScheduledRequest,
 } from "../services/studentApp.service.js";
 
 export const getMyProfile = asyncHandler(async (req, res) => {
@@ -78,5 +80,19 @@ export const postSelectSeat = asyncHandler(async (req, res) => {
   const { studentId, workspaceOwnerId } = req.studentAuth;
   const { seat_id } = req.body ?? {};
   const data = await selectSeatForStudent(studentId, workspaceOwnerId, seat_id);
+  res.json({ data });
+});
+
+// Student pays a scheduled payment request sent by admin
+export const postCreateScheduledOrder = asyncHandler(async (req, res) => {
+  const { studentId, workspaceOwnerId } = req.studentAuth;
+  const { request_id } = req.body ?? {};
+  const data = await createRazorpayOrderForScheduledRequest(studentId, workspaceOwnerId, request_id);
+  res.status(201).json({ data });
+});
+
+export const postVerifyScheduledPayment = asyncHandler(async (req, res) => {
+  const { studentId, workspaceOwnerId } = req.studentAuth;
+  const data = await verifyAndFulfillScheduledRequest(studentId, workspaceOwnerId, req.body ?? {});
   res.json({ data });
 });

@@ -330,3 +330,151 @@ export async function createPublicEnrollment(payload) {
     actor_id: null,
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Membership Hold / Resume
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Put a student's membership on hold.
+ * - Sets membership_status = 'on_hold' on the student row.
+ * - Snapshots the current renewal_date so we can restore + extend it on resume.
+ * - Inserts a membership_holds row with hold_start = today.
+ */
+export async function holdMembership(workspaceOwnerId, studentId, notes, audit = null) {
+  return withTransaction(async (connection) => {
+    const student = await getStudentOrThrow(studentId, workspaceOwnerId, connection);
+
+    if (student.membership_status === "on_hold") {
+      throw new AppError("Membership is already on hold", 400);
+    }
+
+    const holdStart = new Date().toISOString().slice(0, 10);
+
+    // Snapshot current renewal_date so resume can calculate days credited.
+    await query(
+      `UPDATE students
+       SET membership_status = 'on_hold',
+           hold_start = ?,
+           hold_renewal_snapshot = renewal_date
+       WHERE id = ? AND workspace_owner_id = ?`,
+      [holdStart, studentId, workspaceOwnerId],
+      connection
+    );
+
+    const holdId = randomUUID();
+    await query(
+      `INSERT INTO membership_holds
+         (id, workspace_owner_id, student_id, hold_start, notes)
+       VALUES (?, ?, ?, ?, ?)`,
+      [holdId, workspaceOwnerId, studentId, holdStart, notes ?? null],
+      connection
+    );
+
+    await recordAudit(
+      {
+        workspaceOwnerId,
+        objectType: "students",
+        objectId: studentId,
+        action: "membership-hold",
+        actorId: audit?.actor_id,
+        actorRole: audit?.actor_role,
+        metadata: { hold_start: holdStart, renewal_snapshot: toDateString(student.renewal_date) },
+      },
+      connection
+    );
+
+    const row = await queryOne("SELECT * FROM students WHERE id = ?", [studentId], connection);
+    return { student: mapStudent(row), hold_id: holdId };
+  });
+}
+
+/**
+ * Resume a student's membership after a hold.
+ * - Calculates days_on_hold = today - hold_start.
+ * - Adds those days to the snapshotted renewal_date → new renewal_date.
+ * - Sets membership_status = 'active', clears hold columns.
+ * - Closes the open membership_holds row.
+ */
+export async function resumeMembership(workspaceOwnerId, studentId, notes, audit = null) {
+  return withTransaction(async (connection) => {
+    const student = await getStudentOrThrow(studentId, workspaceOwnerId, connection);
+
+    if (student.membership_status !== "on_hold") {
+      throw new AppError("Membership is not currently on hold", 400);
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const holdStart = toDateString(student.hold_start);
+    const renewalSnapshot = toDateString(student.hold_renewal_snapshot);
+
+    // Calculate how many days they were on hold.
+    let newRenewalDate = renewalSnapshot;
+    if (holdStart && renewalSnapshot) {
+      const holdStartMs = Date.parse(holdStart);
+      const resumeMs = Date.parse(today);
+      const daysOnHold = Math.max(0, Math.round((resumeMs - holdStartMs) / 86400000));
+      const extendedMs = Date.parse(renewalSnapshot) + daysOnHold * 86400000;
+      newRenewalDate = new Date(extendedMs).toISOString().slice(0, 10);
+    }
+
+    await query(
+      `UPDATE students
+       SET membership_status = 'active',
+           hold_start = NULL,
+           hold_renewal_snapshot = NULL,
+           renewal_date = ?
+       WHERE id = ? AND workspace_owner_id = ?`,
+      [newRenewalDate, studentId, workspaceOwnerId],
+      connection
+    );
+
+    // Close the open hold record.
+    await query(
+      `UPDATE membership_holds
+       SET hold_end = ?, resumed_at = CURRENT_TIMESTAMP, notes = COALESCE(?, notes)
+       WHERE student_id = ? AND workspace_owner_id = ? AND hold_end IS NULL`,
+      [today, notes ?? null, studentId, workspaceOwnerId],
+      connection
+    );
+
+    await recordAudit(
+      {
+        workspaceOwnerId,
+        objectType: "students",
+        objectId: studentId,
+        action: "membership-resume",
+        actorId: audit?.actor_id,
+        actorRole: audit?.actor_role,
+        metadata: {
+          hold_start: holdStart,
+          resume_date: today,
+          old_renewal: renewalSnapshot,
+          new_renewal: newRenewalDate,
+        },
+      },
+      connection
+    );
+
+    const row = await queryOne("SELECT * FROM students WHERE id = ?", [studentId], connection);
+    return mapStudent(row);
+  });
+}
+
+/**
+ * List all hold records for a student.
+ */
+export async function listStudentHolds(workspaceOwnerId, studentId) {
+  await getStudentOrThrow(studentId, workspaceOwnerId);
+  const rows = await query(
+    `SELECT * FROM membership_holds
+     WHERE workspace_owner_id = ? AND student_id = ?
+     ORDER BY hold_start DESC`,
+    [workspaceOwnerId, studentId]
+  );
+  return rows.map((r) => ({
+    ...r,
+    hold_start: toDateString(r.hold_start),
+    hold_end: toDateString(r.hold_end),
+  }));
+}

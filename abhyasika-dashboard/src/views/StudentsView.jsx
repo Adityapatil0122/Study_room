@@ -38,7 +38,10 @@ function StudentsView({
   onNavigate = () => {},
   payments = [],
   roles = [],
+  onHoldMembership,
+  onResumeMembership,
 }) {
+  const [holdingId, setHoldingId] = useState(null);
   const { hasPermission } = useAuth();
   const [query, setQuery] = useState("");
   const [planFilter, setPlanFilter] = useState("all");
@@ -224,10 +227,14 @@ function StudentsView({
           >
             <span
               className={`h-2 w-2 rounded-full ${
-                student.is_active ? "bg-emerald-500" : "bg-slate-400"
+                student.membership_status === "on_hold"
+                  ? "bg-amber-400"
+                  : student.is_active ? "bg-emerald-500" : "bg-slate-400"
               }`}
             />
-            {student.is_active ? "Active" : "Inactive"}
+            {student.membership_status === "on_hold"
+              ? "On Hold"
+              : student.is_active ? "Active" : "Inactive"}
           </span>
         </td>
         <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
@@ -292,6 +299,38 @@ function StudentsView({
                       {student.is_active ? "Deactivate" : "Activate"}
                     </button>
                   ) : null}
+                  {/* Membership Hold / Resume */}
+                  {student.is_active && student.current_plan_id ? (
+                    student.membership_status === "on_hold" ? (
+                      <button
+                        onClick={async () => {
+                          setHoldingId(student.id);
+                          setOpenMenuId(null);
+                          await onResumeMembership?.(student.id);
+                          setHoldingId(null);
+                        }}
+                        disabled={holdingId === student.id}
+                        className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-emerald-600 transition hover:bg-emerald-50 disabled:opacity-50 dark:hover:bg-emerald-900/20"
+                      >
+                        <LucideIcon name="PlayCircle" className="h-4 w-4" />
+                        Resume Membership
+                      </button>
+                    ) : (
+                      <button
+                        onClick={async () => {
+                          setHoldingId(student.id);
+                          setOpenMenuId(null);
+                          await onHoldMembership?.(student.id);
+                          setHoldingId(null);
+                        }}
+                        disabled={holdingId === student.id}
+                        className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-amber-600 transition hover:bg-amber-50 disabled:opacity-50 dark:hover:bg-amber-900/20"
+                      >
+                        <LucideIcon name="PauseCircle" className="h-4 w-4" />
+                        Hold Membership
+                      </button>
+                    )
+                  ) : null}
                 </div>
               ) : null}
             </>
@@ -301,7 +340,7 @@ function StudentsView({
         </td>
       </tr>
     );
-  }, [seatMap, planMap, latestPaymentByStudent, roleMap, busyIds, canEditStudent, canLogPayment, canToggleStatus, onOpenModal, onToggleActive, openMenuId]);
+  }, [seatMap, planMap, latestPaymentByStudent, roleMap, busyIds, holdingId, canEditStudent, canLogPayment, canToggleStatus, onOpenModal, onToggleActive, onHoldMembership, onResumeMembership, openMenuId]);
 
   // OPTIMIZED: Memoize mobile card render function
   const renderMobileCard = useCallback((student, index, baseIndex = 0) => {
@@ -336,12 +375,16 @@ function StudentsView({
           </div>
           <span
             className={`rounded-full px-3 py-1 text-xs font-semibold ${
-              student.is_active
+              student.membership_status === "on_hold"
+                ? "bg-amber-50 text-amber-600 dark:bg-amber-500/20 dark:text-amber-200"
+                : student.is_active
                 ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-200"
                 : "bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-slate-300"
             }`}
           >
-            {student.is_active ? "Active" : "Inactive"}
+            {student.membership_status === "on_hold"
+              ? "On Hold"
+              : student.is_active ? "Active" : "Inactive"}
           </span>
         </div>
         <div className="mt-3 grid gap-2 text-xs text-slate-600 dark:text-slate-300">
@@ -438,13 +481,44 @@ function StudentsView({
                     {student.is_active ? "Deactivate" : "Activate"}
                   </button>
                 ) : null}
+                {student.is_active && student.current_plan_id ? (
+                  student.membership_status === "on_hold" ? (
+                    <button
+                      onClick={async () => {
+                        setHoldingId(student.id);
+                        setOpenMenuId(null);
+                        await onResumeMembership?.(student.id);
+                        setHoldingId(null);
+                      }}
+                      disabled={holdingId === student.id}
+                      className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-emerald-600 transition hover:bg-emerald-50 disabled:opacity-50"
+                    >
+                      <LucideIcon name="PlayCircle" className="h-4 w-4" />
+                      Resume Membership
+                    </button>
+                  ) : (
+                    <button
+                      onClick={async () => {
+                        setHoldingId(student.id);
+                        setOpenMenuId(null);
+                        await onHoldMembership?.(student.id);
+                        setHoldingId(null);
+                      }}
+                      disabled={holdingId === student.id}
+                      className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-amber-600 transition hover:bg-amber-50 disabled:opacity-50"
+                    >
+                      <LucideIcon name="PauseCircle" className="h-4 w-4" />
+                      Hold Membership
+                    </button>
+                  )
+                ) : null}
               </div>
             ) : null}
           </div>
         ) : null}
       </div>
     );
-  }, [seatMap, planMap, latestPaymentByStudent, roleMap, busyIds, canEditStudent, canLogPayment, canToggleStatus, onOpenModal, onToggleActive, openMenuId]);
+  }, [seatMap, planMap, latestPaymentByStudent, roleMap, busyIds, holdingId, canEditStudent, canLogPayment, canToggleStatus, onOpenModal, onToggleActive, onHoldMembership, onResumeMembership, openMenuId]);
 
   return (
     <div className="space-y-6 w-full">
