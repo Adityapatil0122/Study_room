@@ -127,6 +127,8 @@ function PaymentsView({
     }
     setSchedSaving(true);
     try {
+      const selectedPlan = plans.find((p) => p.id === schedForm.plan_id);
+      const canDiscount = isDiscountEligiblePlan(selectedPlan);
       await onCreateScheduledRequest({
         student_id: schedForm.student_id,
         plan_id: schedForm.plan_id,
@@ -135,6 +137,9 @@ function PaymentsView({
         valid_from: schedForm.type === "custom" ? schedForm.valid_from : undefined,
         valid_until: schedForm.type === "custom" ? schedForm.valid_until : undefined,
         notes: schedForm.notes || null,
+        deposit_amount: Number(schedForm.deposit_amount) || 0,
+        discount_enabled: canDiscount ? schedForm.discount_enabled : false,
+        discount_amount: canDiscount && schedForm.discount_enabled ? Number(schedForm.discount_amount) || 0 : 0,
       });
       setSchedForm(EMPTY_SCHED_FORM);
     } catch (err) {
@@ -571,6 +576,94 @@ function PaymentsView({
                 </div>
               </div>
 
+              {/* Deposit + Discount row */}
+              {(() => {
+                const selectedPlan = plans.find((p) => p.id === schedForm.plan_id);
+                const canDiscount = isDiscountEligiblePlan(selectedPlan);
+                const planAmt = schedForm.type === "half_month" && selectedPlan
+                  ? Math.round(Number(selectedPlan.price) * 15 / 30)
+                  : Number(schedForm.amount) || 0;
+                const deposit = Number(schedForm.deposit_amount) || 0;
+                const discount = canDiscount && schedForm.discount_enabled
+                  ? Number(schedForm.discount_amount) || 0
+                  : 0;
+                const total = Math.max(0, planAmt + deposit - discount);
+
+                return (
+                  <>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Deposit Amount (₹) <span className="font-normal text-slate-400">optional</span>
+                        </label>
+                        <input
+                          type="number"
+                          name="deposit_amount"
+                          value={schedForm.deposit_amount}
+                          onChange={handleSchedFormChange}
+                          placeholder="0"
+                          min="0"
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                        />
+                      </div>
+
+                      {canDiscount ? (
+                        <div>
+                          <label className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            <input
+                              type="checkbox"
+                              name="discount_enabled"
+                              checked={schedForm.discount_enabled}
+                              onChange={handleSchedFormChange}
+                              className="accent-indigo-600"
+                            />
+                            Discount (₹)
+                            <span className="font-normal normal-case text-slate-400">
+                              — eligible for {selectedPlan?.name}
+                            </span>
+                          </label>
+                          <input
+                            type="number"
+                            name="discount_amount"
+                            value={schedForm.discount_amount}
+                            onChange={handleSchedFormChange}
+                            placeholder="0"
+                            min="0"
+                            disabled={!schedForm.discount_enabled}
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:opacity-50"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-end pb-2">
+                          <p className="text-xs text-slate-400">
+                            Discount available for plans ≥ 6 months (180 days).
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Live total breakdown */}
+                    <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-indigo-500">
+                        Total to Collect
+                      </p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-700">
+                        <span>Plan/Fee: <strong>₹{planAmt.toLocaleString("en-IN")}</strong></span>
+                        {deposit > 0 && (
+                          <span className="text-emerald-700">+ Deposit: <strong>₹{deposit.toLocaleString("en-IN")}</strong></span>
+                        )}
+                        {discount > 0 && (
+                          <span className="text-rose-600">− Discount: <strong>₹{discount.toLocaleString("en-IN")}</strong></span>
+                        )}
+                        <span className="ml-auto font-bold text-indigo-700 text-base">
+                          = ₹{total.toLocaleString("en-IN")}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Note to Student (optional)</label>
                 <input
@@ -614,7 +707,10 @@ function PaymentsView({
                     <tr>
                       <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Student</th>
                       <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Type</th>
-                      <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Amount</th>
+                      <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Plan Amt</th>
+                      <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Deposit</th>
+                      <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Discount</th>
+                      <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Total</th>
                       <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Period</th>
                       <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Note</th>
                       <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide text-slate-500">Sent</th>
@@ -637,8 +733,21 @@ function PaymentsView({
                             {req.type === "half_month" ? "15-Day" : "Custom"}
                           </span>
                         </td>
-                        <td className="px-4 py-3 font-semibold text-emerald-600">
+                        <td className="px-4 py-3 font-semibold text-slate-700">
                           ₹{Number(req.amount).toLocaleString("en-IN")}
+                        </td>
+                        <td className="px-4 py-3 text-emerald-600 text-sm">
+                          {Number(req.deposit_amount) > 0
+                            ? `+₹${Number(req.deposit_amount).toLocaleString("en-IN")}`
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-rose-600 text-sm">
+                          {req.discount_enabled && Number(req.discount_amount) > 0
+                            ? `−₹${Number(req.discount_amount).toLocaleString("en-IN")}`
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-3 font-bold text-indigo-700">
+                          ₹{Number(req.total_amount ?? req.amount).toLocaleString("en-IN")}
                         </td>
                         <td className="px-4 py-3 text-slate-600 text-xs">
                           {req.valid_from} → {req.valid_until}

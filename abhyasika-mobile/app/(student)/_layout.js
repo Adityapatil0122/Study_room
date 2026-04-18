@@ -41,6 +41,8 @@ export default function StudentLayout() {
                 }}
             />
             <Tabs.Screen name="pay" options={{ href: null }} />
+            <Tabs.Screen name="seat-select" options={{ href: null }} />
+            <Tabs.Screen name="receipt" options={{ href: null }} />
         </Tabs>
     );
 }

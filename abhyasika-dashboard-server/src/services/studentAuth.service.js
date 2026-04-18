@@ -113,7 +113,10 @@ export async function registerStudent(payload) {
       fee_plan_type: payload.fee_plan_type ?? "monthly",
       fee_cycle: payload.fee_cycle ?? "calendar",
       join_date: payload.join_date ?? new Date().toISOString().slice(0, 10),
-      registration_source: "mobile_app",
+      deposit_amount: Number(payload.deposit_amount ?? 0) || 0,
+      aadhaar_file_url: payload.aadhaar_file_url ?? null,
+      aadhaar_file_type: payload.aadhaar_file_type ?? null,
+      registration_source: payload.registration_source ?? "student_app",
       registered_by_role: "Self",
     },
     { actor_role: "Self", actor_id: null }

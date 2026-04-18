@@ -34,6 +34,15 @@ const downloadBlob = (content, filename, type = "text/plain") => {
   URL.revokeObjectURL(url);
 };
 
+const sortSeatsByNumber = (items = []) =>
+  [...items].sort((left, right) =>
+    String(left?.seat_number ?? "").localeCompare(
+      String(right?.seat_number ?? ""),
+      undefined,
+      { numeric: true, sensitivity: "base" }
+    )
+  );
+
 const getRenewalAlert = (student) => {
   if (!student) return null;
   if (!student.renewal_date) {
@@ -73,9 +82,11 @@ function SeatManagerView({ seats, students, onOpenModal }) {
     return map;
   }, [students]);
 
+  const sortedSeats = useMemo(() => sortSeatsByNumber(seats), [seats]);
+
   const seatRows = useMemo(
     () =>
-      seats.map((seat) => {
+      sortedSeats.map((seat) => {
         const student = studentMap.get(seat.current_student_id);
         return {
           id: seat.id,
@@ -88,7 +99,7 @@ function SeatManagerView({ seats, students, onOpenModal }) {
             : "-",
         };
       }),
-    [seats, studentMap]
+    [sortedSeats, studentMap]
   );
 
   const exportCsv = () => {
@@ -158,8 +169,8 @@ function SeatManagerView({ seats, students, onOpenModal }) {
       </div>
 
       <div className="rounded-2xl border border-slate-100 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 shadow-sm">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {seats.map((seat) => {
+        <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {sortedSeats.map((seat) => {
             const occupant = studentMap.get(seat.current_student_id);
             const renewalAlert =
               seat.status === "occupied" ? getRenewalAlert(occupant) : null;

@@ -7,10 +7,10 @@ import {
     ActivityIndicator,
     Image,
 } from "react-native";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useAuth } from "../../context/AuthContext";
 
 export default function StudentHomeScreen() {
@@ -30,7 +30,23 @@ export default function StudentHomeScreen() {
                 api.listMyPayments(),
             ]);
             setSubscription(sub);
-            setPayments((pays?.all ?? []).slice(0, 3));
+            // listMyPayments returns { all: [...], online: [...] } or a flat array
+            // Merge offline (all) and online payments, sort newest first
+            let allPays;
+            if (Array.isArray(pays)) {
+                allPays = pays;
+            } else {
+                const offline = Array.isArray(pays?.all) ? pays.all : [];
+                const online = Array.isArray(pays?.online) ? pays.online : [];
+                const merged = [...offline, ...online];
+                merged.sort((a, b) => {
+                    const dateA = new Date(a.payment_date ?? a.created_at ?? 0).getTime();
+                    const dateB = new Date(b.payment_date ?? b.created_at ?? 0).getTime();
+                    return dateB - dateA;
+                });
+                allPays = merged;
+            }
+            setPayments(allPays.slice(0, 5));
         } catch (err) {
             setError(err?.message ?? "Failed to load data");
         } finally {
@@ -39,9 +55,14 @@ export default function StudentHomeScreen() {
         }
     }, [api]);
 
-    useEffect(() => {
-        load();
-    }, [load]);
+    // Reload fresh data every time this screen comes into focus
+    // (e.g. returning from pay / receipt screens after a successful payment)
+    useFocusEffect(
+        useCallback(() => {
+            setLoading(true);
+            load();
+        }, [load])
+    );
 
     const onRefresh = () => {
         setRefreshing(true);
@@ -175,7 +196,7 @@ export default function StudentHomeScreen() {
                         ) : null}
 
                         {/* No active plan warning */}
-                        {!subscription?.plan && !subscription?.pending_qr ? (
+                        {!subscription?.plan && !subscription?.pending_qr && !subscription?.scheduled_request ? (
                             <View className="bg-rose-50 border border-rose-200 rounded-xl p-4 mt-4">
                                 <Text className="text-rose-700 font-bold text-sm mb-1">No Active Plan</Text>
                                 <Text className="text-rose-600 text-xs">
@@ -184,7 +205,22 @@ export default function StudentHomeScreen() {
                             </View>
                         ) : null}
 
-                        {subscription?.membership_status !== "on_hold" ? (
+                        {/* Payment successful banner — plan is active */}
+                        {subscription?.plan && subscription?.days_remaining > 0 ? (
+                            <View className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mt-4">
+                                <Text className="text-emerald-700 font-bold text-sm mb-1">
+                                    ✅ Plan Active
+                                </Text>
+                                <Text className="text-emerald-600 text-xs">
+                                    Your <Text className="font-semibold">{subscription.plan.name}</Text> plan is active.{" "}
+                                    {subscription.days_remaining} day{subscription.days_remaining !== 1 ? "s" : ""} remaining.
+                                </Text>
+                            </View>
+                        ) : null}
+
+                        {/* Show payment button only when: no plan, plan expired, or plan expiring in 7 days */}
+                        {subscription?.membership_status !== "on_hold" &&
+                        (!subscription?.plan || (subscription?.days_remaining !== null && subscription?.days_remaining <= 7)) ? (
                             <TouchableOpacity
                                 onPress={() => router.push("/(student)/pay")}
                                 className="bg-indigo-600 rounded-xl p-5 mt-4 flex-row items-center justify-between"
@@ -194,7 +230,9 @@ export default function StudentHomeScreen() {
                                         {subscription?.plan ? "Renew Plan" : "Make a Payment"}
                                     </Text>
                                     <Text className="text-indigo-100 text-sm mt-1">
-                                        Pay online or via UPI QR
+                                        {subscription?.days_remaining !== null && subscription?.days_remaining <= 7 && subscription?.days_remaining > 0
+                                            ? `Expires in ${subscription.days_remaining} days — renew now`
+                                            : "Pay online or via UPI QR"}
                                     </Text>
                                 </View>
                                 <Text className="text-white text-3xl">→</Text>
@@ -202,9 +240,14 @@ export default function StudentHomeScreen() {
                         ) : null}
 
                         <View className="mt-6">
-                            <Text className="text-lg font-semibold text-gray-900 mb-3">
-                                Recent Payments
-                            </Text>
+                            <View className="flex-row justify-between items-center mb-3">
+                                <Text className="text-lg font-semibold text-gray-900">
+                                    Recent Payments
+                                </Text>
+                                <TouchableOpacity onPress={() => router.push("/(student)/payments")}>
+                                    <Text className="text-indigo-600 text-sm font-semibold">View All →</Text>
+                                </TouchableOpacity>
+                            </View>
                             {payments.length === 0 ? (
                                 <View className="bg-white rounded-xl p-4 border border-gray-200">
                                     <Text className="text-gray-500 text-sm text-center">
@@ -296,7 +339,7 @@ function PaymentRow({ payment }) {
                 </Text>
             </View>
             <Text className="text-gray-900 font-bold">
-                ₹{Number(payment.amount_paid).toLocaleString()}
+                ₹{Number(payment.amount_paid ?? payment.amount ?? 0).toLocaleString()}
             </Text>
         </View>
     );

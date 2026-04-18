@@ -365,7 +365,8 @@ export function createApiClient() {
     },
 
     async listMyPayments() {
-      return asArray(await request("/student/payments"), ["payments"]);
+      // Returns { online: [...], all: [...] } — do NOT flatten with asArray
+      return request("/student/payments");
     },
 
     async createPaymentOrder(payload) {
@@ -405,6 +406,26 @@ export function createApiClient() {
         method: "POST",
         body: { seat_id: seatId },
       });
+    },
+
+    // Upload Aadhaar document (image or PDF) – returns { url, mimeType }
+    // Uses a public endpoint so it works during registration (no auth required)
+    async uploadAadhaarFile(fileUri, mimeType, fileName) {
+      const formData = new FormData();
+      formData.append("file", {
+        uri: fileUri,
+        name: fileName ?? "aadhaar",
+        type: mimeType ?? "application/octet-stream",
+      });
+      const response = await fetch(`${API_BASE_URL}/student-auth/upload-id-proof`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error?.message ?? data?.message ?? "Upload failed");
+      }
+      return data?.data;
     },
 
     // Pay an admin-scheduled request via Razorpay (create order)

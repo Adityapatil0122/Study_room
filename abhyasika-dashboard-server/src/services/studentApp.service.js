@@ -213,6 +213,18 @@ export async function getSubscription(studentId, workspaceOwnerId) {
           id: scheduledRequest.id,
           type: scheduledRequest.type,
           amount: Number(scheduledRequest.amount),
+          deposit_amount: Number(scheduledRequest.deposit_amount ?? 0),
+          discount_enabled: Boolean(scheduledRequest.discount_enabled),
+          discount_amount: Number(scheduledRequest.discount_amount ?? 0),
+          total_amount:
+            scheduledRequest.total_amount != null
+              ? Number(scheduledRequest.total_amount)
+              : Math.max(
+                  0,
+                  Number(scheduledRequest.amount) +
+                    Number(scheduledRequest.deposit_amount ?? 0) -
+                    Number(scheduledRequest.discount_amount ?? 0)
+                ),
           valid_from: toDateString(scheduledRequest.valid_from),
           valid_until: toDateString(scheduledRequest.valid_until),
           plan_name: scheduledRequest.plan_name,
@@ -227,8 +239,8 @@ export async function listStudentPayments(studentId, workspaceOwnerId) {
     `SELECT sp.*, p.name AS plan_name
      FROM student_payments sp
      LEFT JOIN plans p ON p.id = sp.plan_id
-     WHERE sp.student_id = ? AND sp.workspace_owner_id = ?
-     ORDER BY sp.created_at DESC`,
+     WHERE sp.student_id = ? AND sp.workspace_owner_id = ? AND sp.status = 'paid'
+     ORDER BY sp.payment_date DESC`,
     [studentId, workspaceOwnerId]
   );
 
@@ -244,7 +256,12 @@ export async function listStudentPayments(studentId, workspaceOwnerId) {
   return {
     online: onlinePayments.map((row) => ({
       ...row,
-      payment_date: row.payment_date,
+      // Normalize field names so mobile can treat both lists uniformly
+      amount_paid: Number(row.amount),
+      payment_mode: row.payment_mode ?? "razorpay",
+      valid_from: toDateString(row.valid_from),
+      valid_until: toDateString(row.valid_until),
+      payment_date: row.payment_date ?? row.created_at,
     })),
     all: offlinePayments.map((row) => ({
       ...row,
@@ -610,7 +627,19 @@ export async function createRazorpayOrderForScheduledRequest(studentId, workspac
   if (req.student_id !== studentId) throw new AppError("Not authorised", 403);
   if (req.status !== "sent") throw new AppError(`Request is already ${req.status}`, 400);
 
-  const amountPaise = Math.round(Number(req.amount) * 100);
+  // Use total_amount (plan fee + deposit − discount) if present, otherwise fall back to amount.
+  // This ensures deposit and discount are both reflected in the Razorpay charge.
+  const chargeAmount =
+    req.total_amount !== null && req.total_amount !== undefined
+      ? Number(req.total_amount)
+      : Math.max(
+          0,
+          Number(req.amount) +
+            Number(req.deposit_amount ?? 0) -
+            Number(req.discount_amount ?? 0)
+        );
+
+  const amountPaise = Math.round(chargeAmount * 100);
   const order = await createOrder({ amount: amountPaise, currency: "INR" });
 
   const id = randomUUID();
@@ -621,7 +650,7 @@ export async function createRazorpayOrderForScheduledRequest(studentId, workspac
         valid_from, valid_until)
      VALUES (?, ?, ?, ?, ?, 'INR', ?, 'created', ?, ?)`,
     [id, workspaceOwnerId, studentId, req.plan_id,
-     req.amount, order.id,
+     chargeAmount, order.id,
      toDateString(req.valid_from), toDateString(req.valid_until)]
   );
 

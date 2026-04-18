@@ -76,6 +76,14 @@ const plusDays = (dateValue, days) => {
   date.setDate(date.getDate() + Number(days || 30));
   return date.toISOString().slice(0, 10);
 };
+const sortSeatsByNumber = (items = []) =>
+  [...items].sort((left, right) =>
+    String(left?.seat_number ?? "").localeCompare(
+      String(right?.seat_number ?? ""),
+      undefined,
+      { numeric: true, sensitivity: "base" }
+    )
+  );
 
 function Card({ children, className = "", style }) {
   return <View style={style} className={`rounded-xl border border-slate-100 bg-white p-5 shadow-sm ${className}`}>{children}</View>;
@@ -204,6 +212,9 @@ export default function Dashboard() {
   const statWidth = (contentWidth - statGap * (statColumns - 1)) / statColumns;
   const statCardStyle = { width: statWidth, minHeight: contentWidth < 360 ? 108 : 116 };
   const compactStats = contentWidth < 370;
+  const seatGap = 12;
+  const seatColumns = contentWidth < 360 ? 1 : contentWidth >= 960 ? 4 : contentWidth >= 640 ? 3 : 2;
+  const seatCardWidth = (contentWidth - seatGap * (seatColumns - 1)) / seatColumns;
 
   // Drawer slide animation
   const drawerAnim = useRef(new Animated.Value(0)).current;
@@ -341,9 +352,10 @@ export default function Dashboard() {
   };
 
   const audit = { actor_id: admin?.id, actor_role: admin?.name || admin?.email || "Mobile admin" };
+  const sortedSeats = useMemo(() => sortSeatsByNumber(data.seats), [data.seats]);
   const activeStudents = data.students.filter((student) => student.is_active);
-  const availableSeats = data.seats.filter((seat) => seat.status !== "occupied");
-  const occupiedSeats = data.seats.filter((seat) => seat.status === "occupied");
+  const availableSeats = sortedSeats.filter((seat) => seat.status !== "occupied");
+  const occupiedSeats = sortedSeats.filter((seat) => seat.status === "occupied");
   const availableStudents = data.students.filter((student) => student.is_active && !student.current_seat_id);
   const renewals = activeStudents.filter((student) => {
     const days = diffDays(student.renewal_date);
@@ -607,11 +619,11 @@ export default function Dashboard() {
   const seatsView = (
     <>
       <Header title="Seat Manager" subtitle={`${occupiedSeats.length} occupied, ${availableSeats.length} available.`} action="Add" onAction={() => setModal("seat")} />
-      <View className="flex-row flex-wrap justify-between">
-        {data.seats.map((seat) => {
+      <View style={{ columnGap: seatGap }} className="flex-row flex-wrap">
+        {sortedSeats.map((seat) => {
           const occupied = seat.status === "occupied";
           return (
-            <Card key={seat.id} className={`mb-4 w-[48%] ${occupied ? "bg-indigo-50" : "bg-white"}`}>
+            <Card key={seat.id} style={{ width: seatCardWidth }} className={`mb-4 ${occupied ? "bg-indigo-50" : "bg-white"}`}>
               <Text className="text-2xl font-bold text-slate-950">{seat.seat_number}</Text>
               <Text className={`mt-1.5 text-sm font-bold uppercase ${occupied ? "text-indigo-600" : "text-emerald-600"}`}>{occupied ? "Occupied" : "Available"}</Text>
               <Text className="mt-2 text-sm text-slate-500" numberOfLines={2}>{occupied ? studentName(data.students, seat.current_student_id) : "Ready"}</Text>

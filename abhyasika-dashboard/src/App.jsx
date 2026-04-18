@@ -80,6 +80,7 @@ function App() {
   const [expenseCategories, setExpenseCategories] = useState([]);
   const [pendingPayments, setPendingPayments] = useState([]);
   const [scheduledRequests, setScheduledRequests] = useState([]);
+  const [adminNotifs, setAdminNotifs] = useState([]);
   const [branding, setBranding] = useState({
     logoUrl: "/images/abhyasika-logo.png",
     logoPath: "",
@@ -367,8 +368,25 @@ function App() {
       }));
   }, [seats]);
 
+  // Backend admin_notifications (new-registration alerts etc.)
+  const backendNotifications = useMemo(() => {
+    if (adminNotifs.length === 0) return [];
+    return adminNotifs
+      .filter((n) => !n.is_read)
+      .map((n) => ({
+        id: `backend-${n.id}`,
+        _backendId: n.id,
+        title: n.title,
+        message: n.message ?? "",
+        tone: n.type === "student-registered" ? "info" : "info",
+        category: n.type === "student-registered" ? "admission" : "info",
+        date: n.created_at ? new Date(n.created_at) : new Date(),
+      }));
+  }, [adminNotifs]);
+
   const notifications = useMemo(() => {
     const items = [
+      ...backendNotifications,
       ...pendingApprovalNotifications,
       ...renewalNotifications,
       ...registrationNotifications,
@@ -379,6 +397,7 @@ function App() {
 
     return items.sort((a, b) => b.date - a.date).slice(0, 25);
   }, [
+    backendNotifications,
     pendingApprovalNotifications,
     renewalNotifications,
     registrationNotifications,
@@ -427,13 +446,35 @@ function App() {
 
   const notificationTabs = [
     { key: "all", label: "All" },
+    { key: "admission", label: "New Sign-ups" },
     { key: "approval", label: "Approvals" },
     { key: "renewal", label: "Renewals" },
     { key: "payment", label: "Payments" },
     { key: "registration", label: "Reg. Fees" },
     { key: "seat", label: "Seats" },
-    { key: "admission", label: "Admissions" },
   ];
+
+  const handleMarkBackendNotifRead = useCallback(async (backendId) => {
+    if (!api.markNotificationRead) return;
+    try {
+      await api.markNotificationRead(backendId);
+      setAdminNotifs((prev) =>
+        prev.map((n) => (n.id === backendId ? { ...n, is_read: true } : n))
+      );
+    } catch {
+      // Non-fatal
+    }
+  }, [api]);
+
+  const handleMarkAllNotifsRead = useCallback(async () => {
+    if (!api.markAllNotificationsRead) return;
+    try {
+      await api.markAllNotificationsRead();
+      setAdminNotifs((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    } catch {
+      // Non-fatal
+    }
+  }, [api]);
 
   const toggleTheme = () =>
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
@@ -510,6 +551,7 @@ function App() {
           categoryData,
           pendingData,
           scheduledData,
+          notifData,
         ] = await Promise.all([
           api.listPlans(),
           api.listStudents(),
@@ -521,6 +563,7 @@ function App() {
           api.listScheduledPaymentRequests
             ? api.listScheduledPaymentRequests("sent")
             : [],
+          api.listNotifications ? api.listNotifications(50) : { notifications: [], unread: 0 },
         ]);
 
         setPlans(sortPlans(planData));
@@ -531,6 +574,7 @@ function App() {
         setExpenseCategories(categoryData || []);
         setPendingPayments(pendingData || []);
         setScheduledRequests(scheduledData || []);
+        setAdminNotifs(notifData?.notifications ?? []);
         setError("");
       } catch (err) {
         setError(err.message ?? "Failed to load dashboard data.");
@@ -1528,15 +1572,31 @@ function App() {
                               </p>
                               <p className="text-xs text-slate-500 dark:text-slate-400">
                                 {notifications.length} total alerts
+                                {backendNotifications.length > 0 && (
+                                  <span className="ml-1 text-indigo-500 font-semibold">
+                                    · {backendNotifications.length} new
+                                  </span>
+                                )}
                               </p>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => setNotificationOpen(false)}
-                              className="text-xs font-semibold text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-white"
-                            >
-                              Close
-                            </button>
+                            <div className="flex gap-2">
+                              {backendNotifications.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={handleMarkAllNotifsRead}
+                                  className="text-xs font-semibold text-indigo-500 hover:text-indigo-700"
+                                >
+                                  Mark all read
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setNotificationOpen(false)}
+                                className="text-xs font-semibold text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-white"
+                              >
+                                Close
+                              </button>
+                            </div>
                           </div>
                           <div className="flex gap-2 overflow-x-auto px-4 py-2">
                             {notificationTabs.map((tab) => (
@@ -1563,7 +1623,19 @@ function App() {
                               filteredNotifications.map((notification) => (
                                 <div
                                   key={notification.id}
-                                  className="flex items-start gap-3 rounded-2xl px-4 py-3 text-sm transition-colors duration-200 hover:bg-slate-50 dark:hover:bg-gray-800"
+                                  className={`flex items-start gap-3 rounded-2xl px-4 py-3 text-sm transition-colors duration-200 hover:bg-slate-50 dark:hover:bg-gray-800 ${
+                                    notification._backendId ? "cursor-pointer" : ""
+                                  }`}
+                                  onClick={() => {
+                                    if (notification._backendId) {
+                                      handleMarkBackendNotifRead(notification._backendId);
+                                      // Navigate to students view to see the new signup
+                                      if (notification.category === "admission") {
+                                        navigateTo("students");
+                                        setNotificationOpen(false);
+                                      }
+                                    }
+                                  }}
                                 >
                                   <span
                                     className={`mt-1 inline-flex h-8 w-8 items-center justify-center rounded-2xl text-white ${

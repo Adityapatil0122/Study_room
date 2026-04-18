@@ -117,8 +117,33 @@ function PlanModal({ open, onClose, plan, onSubmit, isSystem = false }) {
               placeholder="2500"
             />
           </label>
-          <label className="flex flex-col text-sm font-medium text-slate-700 dark:text-slate-200">
-            Duration (days)
+          <div className="flex flex-col text-sm font-medium text-slate-700 dark:text-slate-200">
+            <span>Duration (days)</span>
+            {/* Month quick-pick buttons */}
+            {!isSystem && (
+              <div className="mt-1 flex gap-1">
+                {[1, 3, 6, 12].map((months) => {
+                  const days = months * 30;
+                  const active = Number(form.duration_days) === days;
+                  return (
+                    <button
+                      key={months}
+                      type="button"
+                      onClick={() =>
+                        setForm((prev) => ({ ...prev, duration_days: days }))
+                      }
+                      className={`rounded-lg border px-2 py-1 text-xs font-semibold transition ${
+                        active
+                          ? "border-indigo-500 bg-indigo-600 text-white"
+                          : "border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50 dark:border-gray-600 dark:text-slate-300"
+                      }`}
+                    >
+                      {months}M
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <input
               name="duration_days"
               type="number"
@@ -131,12 +156,19 @@ function PlanModal({ open, onClose, plan, onSubmit, isSystem = false }) {
               }`}
               placeholder="30"
             />
+            {!isSystem && (
+              <span className="mt-1 text-xs text-slate-400">
+                {Number(form.duration_days) > 0
+                  ? `≈ ${(Number(form.duration_days) / 30).toFixed(1)} month(s)`
+                  : ""}
+              </span>
+            )}
             {isSystem ? (
               <span className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                 Core plan duration is fixed.
               </span>
             ) : null}
-          </label>
+          </div>
           <label className="flex flex-col text-sm font-medium text-slate-700 dark:text-slate-200">
             Status
             <div className="mt-3 inline-flex items-center gap-2">

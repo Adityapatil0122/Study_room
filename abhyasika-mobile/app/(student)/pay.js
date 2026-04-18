@@ -109,22 +109,24 @@ export default function PayScreen() {
         razorpay_signature: result.razorpay_signature,
       });
 
-      Alert.alert(
-        "Payment successful",
-        `Your plan has been activated.\nValid: ${fmtDate(order.valid_from)} - ${fmtDate(order.valid_until)}`,
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              if (!student?.current_seat_id) {
-                router.replace("/(student)/seat-select");
-              } else {
-                router.replace("/(student)/home");
-              }
-            },
-          },
-        ]
-      );
+      // Navigate to the receipt screen with payment data
+      const receiptPayment = {
+        id: result.razorpay_payment_id ?? order.id,
+        plan_name: order.plan?.name ?? selectedPlan?.name ?? "Plan",
+        amount_paid: Math.round(order.amount / 100), // amount is in paise
+        payment_date: new Date().toISOString(),
+        payment_mode: "razorpay",
+        valid_from: order.valid_from,
+        valid_until: order.valid_until,
+        notes: `Order: ${result.razorpay_order_id}`,
+      };
+      router.replace({
+        pathname: "/(student)/receipt",
+        params: {
+          payment: JSON.stringify(receiptPayment),
+          redirectAfter: !student?.current_seat_id ? "/(student)/seat-select" : "/(student)/home",
+        },
+      });
     } catch (err) {
       const msg =
         err?.description ??
@@ -164,11 +166,27 @@ export default function PayScreen() {
         razorpay_signature: result.razorpay_signature,
         scheduled_request_id: req.id,
       });
-      Alert.alert(
-        "Payment successful",
-        `Your payment of Rs ${Number(req.amount).toLocaleString("en-IN")} has been recorded.\nValid: ${fmtDate(req.valid_from)} - ${fmtDate(req.valid_until)}`,
-        [{ text: "OK", onPress: () => router.replace("/(student)/home") }]
-      );
+      const paidTotal = req.total_amount != null
+        ? Number(req.total_amount)
+        : Math.max(0, Number(req.amount ?? 0) + Number(req.deposit_amount ?? 0) - (req.discount_enabled ? Number(req.discount_amount ?? 0) : 0));
+
+      const receiptPayment = {
+        id: result.razorpay_payment_id ?? req.id,
+        plan_name: req.plan_name ?? "Plan Payment",
+        amount_paid: paidTotal,
+        payment_date: new Date().toISOString(),
+        payment_mode: "razorpay",
+        valid_from: req.valid_from,
+        valid_until: req.valid_until,
+        notes: req.notes ?? null,
+      };
+      router.replace({
+        pathname: "/(student)/receipt",
+        params: {
+          payment: JSON.stringify(receiptPayment),
+          redirectAfter: "/(student)/home",
+        },
+      });
     } catch (err) {
       const msg = err?.description ?? err?.message ?? "Payment failed. Please try again.";
       Alert.alert("Payment failed", msg);
@@ -242,103 +260,192 @@ export default function PayScreen() {
 
   if (qrPreview) {
     const existingPending = qrPreview.existing_pending;
+    const amount = Number(qrPreview.amount);
 
     return (
-      <SafeAreaView className="flex-1 bg-gray-50">
+      <SafeAreaView style={{ flex: 1, backgroundColor: "#f0f2ff" }}>
         <StatusBar style="dark" />
-        <View className="px-4 pt-4 pb-2 bg-white border-b border-gray-200 flex-row items-center">
-          <TouchableOpacity onPress={() => setQrPreview(null)} className="mr-3 p-2">
-            <Text className="text-indigo-600 text-base">{`<-`}</Text>
+
+        {/* Nav bar */}
+        <View style={{
+          flexDirection: "row", alignItems: "center",
+          paddingHorizontal: 16, paddingVertical: 12,
+          backgroundColor: "#fff",
+          borderBottomWidth: 1, borderBottomColor: "#e0e2f7",
+        }}>
+          <TouchableOpacity onPress={() => setQrPreview(null)} style={{ padding: 4, marginRight: 10 }}>
+            <Text style={{ color: "#4f46e5", fontSize: 14, fontWeight: "600" }}>← Back</Text>
           </TouchableOpacity>
-          <View>
-            <Text className="text-2xl font-bold text-gray-900">UPI QR Payment</Text>
-            <Text className="text-gray-500 text-sm">
-              Pay first, then send the approval request to admin
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 17, fontWeight: "800", color: "#111827" }}>Pay via UPI QR</Text>
+            <Text style={{ fontSize: 12, color: "#6b7280", marginTop: 1 }}>
+              Scan · Pay · Send request to admin
             </Text>
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={{ padding: 20 }}>
-          <View className="bg-white rounded-2xl border border-gray-200 p-5 mb-4">
-            <Text className="text-lg font-bold text-gray-900 mb-1">
-              Scan and Pay via UPI
-            </Text>
-            <Text className="text-sm text-gray-500 mb-4">
-              Pay Rs {Number(qrPreview.amount).toLocaleString("en-IN")} using any UPI app, then tap the button below to send your approval request to the admin.
-            </Text>
+        <ScrollView contentContainerStyle={{ padding: 18, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
 
-            <View className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
-              <Text className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">
-                Payment Details
-              </Text>
-              <Text className="text-sm text-amber-800">
-                Amount: <Text className="font-bold">Rs {Number(qrPreview.amount).toLocaleString("en-IN")}</Text>
-              </Text>
-              <Text className="text-sm text-amber-800">
-                Valid: {fmtDate(qrPreview.valid_from)} - {fmtDate(qrPreview.valid_until)}
-              </Text>
-              {qrPreview.prorated ? (
-                <Text className="text-xs text-amber-600 mt-1">
-                  Prorated for the remaining days in this month
+          {/* ── Amount card ── */}
+          <View style={{
+            backgroundColor: "#4f46e5", borderRadius: 20,
+            paddingHorizontal: 22, paddingVertical: 20,
+            marginBottom: 16,
+            shadowColor: "#4f46e5", shadowOpacity: 0.25,
+            shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 5,
+          }}>
+            <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: "700", letterSpacing: 1.5, textTransform: "uppercase" }}>
+              Amount to Pay
+            </Text>
+            <Text style={{ color: "#fff", fontSize: 38, fontWeight: "900", marginTop: 4, letterSpacing: -0.5 }}>
+              ₹{amount.toLocaleString("en-IN")}
+            </Text>
+            <View style={{ flexDirection: "row", marginTop: 10, gap: 10 }}>
+              <View style={{ backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 }}>
+                <Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>
+                  📅 {fmtDate(qrPreview.valid_from)} → {fmtDate(qrPreview.valid_until)}
                 </Text>
+              </View>
+              {qrPreview.prorated ? (
+                <View style={{ backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 }}>
+                  <Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>Prorated</Text>
+                </View>
               ) : null}
             </View>
-
-            {qrPreview.upi_qr_url && qrPreview.upi_qr_url.startsWith("http") ? (
-              <View className="items-center mb-4">
-                <Image
-                  source={{ uri: qrPreview.upi_qr_url }}
-                  style={{ width: 220, height: 220, borderRadius: 12 }}
-                  resizeMode="contain"
-                />
-              </View>
-            ) : qrPreview.upi_qr_url && qrPreview.upi_qr_url.startsWith("upi://") ? (
-              <TouchableOpacity
-                onPress={() => Linking.openURL(qrPreview.upi_qr_url)}
-                className="bg-indigo-600 rounded-xl py-3 items-center mb-4"
-              >
-                <Text className="text-white font-bold">Open UPI App</Text>
-              </TouchableOpacity>
-            ) : (
-              <View className="bg-gray-100 rounded-xl p-4 items-center mb-4">
-                <Text className="text-gray-500 text-sm text-center">
-                  No QR code is configured yet. Please contact the admin for payment details.
-                </Text>
-              </View>
-            )}
-
-            {existingPending ? (
-              <View className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-4">
-                <Text className="text-emerald-700 font-bold text-sm mb-1">
-                  Approval request already sent
-                </Text>
-                <Text className="text-emerald-600 text-xs">
-                  Submitted on {existingPending.submitted_at
-                    ? new Date(existingPending.submitted_at).toLocaleDateString("en-IN")
-                    : "-"}.
-                  The admin can review and approve it from the dashboard.
-                </Text>
-              </View>
-            ) : (
-              <View className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 mb-4">
-                <Text className="text-xs text-indigo-700">
-                  After completing the UPI payment, tap the button below so the admin gets a notification to review and approve your payment.
-                </Text>
-              </View>
-            )}
           </View>
 
+          {/* ── QR Code card ── */}
+          <View style={{
+            backgroundColor: "#fff", borderRadius: 20,
+            borderWidth: 1, borderColor: "#e0e2f7",
+            padding: 20, marginBottom: 16, alignItems: "center",
+            shadowColor: "#4f46e5", shadowOpacity: 0.07,
+            shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 3,
+          }}>
+            <Text style={{ fontSize: 15, fontWeight: "800", color: "#111827", marginBottom: 4 }}>
+              Scan QR to Pay
+            </Text>
+            <Text style={{ fontSize: 12, color: "#6b7280", marginBottom: 18, textAlign: "center" }}>
+              Open any UPI app (GPay, PhonePe, Paytm) and scan the code below
+            </Text>
+
+            {/* QR Image — bundled local asset takes priority, server URL as fallback */}
+            <View style={{
+              padding: 14,
+              backgroundColor: "#fff",
+              borderRadius: 16,
+              borderWidth: 1.5, borderColor: "#e0e2f7",
+              shadowColor: "#000", shadowOpacity: 0.06,
+              shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+              marginBottom: 16,
+            }}>
+              {(() => {
+                // Try bundled local QR first
+                try {
+                  const localQr = require("../../assets/qr_code.png");
+                  return (
+                    <Image
+                      source={localQr}
+                      style={{ width: 230, height: 230 }}
+                      resizeMode="contain"
+                    />
+                  );
+                } catch (_) {
+                  // Fall back to server-configured URL
+                  if (qrPreview.upi_qr_url && qrPreview.upi_qr_url.startsWith("http")) {
+                    return (
+                      <Image
+                        source={{ uri: qrPreview.upi_qr_url }}
+                        style={{ width: 230, height: 230 }}
+                        resizeMode="contain"
+                      />
+                    );
+                  }
+                  // No QR available
+                  return (
+                    <View style={{ width: 230, height: 230, alignItems: "center", justifyContent: "center", backgroundColor: "#f9fafb", borderRadius: 12 }}>
+                      <Text style={{ fontSize: 40, marginBottom: 10 }}>📱</Text>
+                      <Text style={{ color: "#6b7280", fontSize: 13, textAlign: "center", paddingHorizontal: 16 }}>
+                        No QR configured yet.{"\n"}Contact admin for UPI details.
+                      </Text>
+                    </View>
+                  );
+                }
+              })()}
+            </View>
+
+            {/* UPI deep-link button if available */}
+            {qrPreview.upi_qr_url && qrPreview.upi_qr_url.startsWith("upi://") ? (
+              <TouchableOpacity
+                onPress={() => Linking.openURL(qrPreview.upi_qr_url)}
+                style={{
+                  backgroundColor: "#ecfdf5", borderWidth: 1.5, borderColor: "#6ee7b7",
+                  borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24,
+                  flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8,
+                }}
+              >
+                <Text style={{ fontSize: 18 }}>📲</Text>
+                <Text style={{ color: "#065f46", fontWeight: "700", fontSize: 14 }}>Open UPI App Directly</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <Text style={{ fontSize: 11, color: "#9ca3af", textAlign: "center" }}>
+              Supported: Google Pay · PhonePe · Paytm · BHIM · Any UPI app
+            </Text>
+          </View>
+
+          {/* ── Status banner ── */}
+          {existingPending ? (
+            <View style={{
+              backgroundColor: "#ecfdf5", borderWidth: 1.5, borderColor: "#6ee7b7",
+              borderRadius: 16, padding: 16, marginBottom: 16,
+            }}>
+              <Text style={{ color: "#065f46", fontWeight: "800", fontSize: 14, marginBottom: 4 }}>
+                ✅ Approval Request Already Sent
+              </Text>
+              <Text style={{ color: "#059669", fontSize: 13 }}>
+                Submitted on {existingPending.submitted_at
+                  ? new Date(existingPending.submitted_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+                  : "—"}.
+              </Text>
+              <Text style={{ color: "#6b7280", fontSize: 12, marginTop: 4 }}>
+                The admin will review and approve it from the dashboard shortly.
+              </Text>
+            </View>
+          ) : (
+            <View style={{
+              backgroundColor: "#eff6ff", borderWidth: 1, borderColor: "#bfdbfe",
+              borderRadius: 16, padding: 14, marginBottom: 16,
+            }}>
+              <Text style={{ color: "#1d4ed8", fontWeight: "700", fontSize: 13, marginBottom: 4 }}>
+                ℹ️ How it works
+              </Text>
+              <Text style={{ color: "#3b82f6", fontSize: 12, lineHeight: 18 }}>
+                1. Scan the QR code and complete the UPI payment{"\n"}
+                2. Tap <Text style={{ fontWeight: "700" }}>"I've Paid — Notify Admin"</Text> below{"\n"}
+                3. Admin reviews and approves your payment
+              </Text>
+            </View>
+          )}
+
+          {/* ── Action buttons ── */}
           {!existingPending ? (
             <TouchableOpacity
               onPress={handleSendApprovalRequest}
               disabled={sendingQrRequest}
-              className={`bg-emerald-600 rounded-xl py-4 items-center mb-3 ${sendingQrRequest ? "opacity-70" : ""}`}
+              style={{
+                backgroundColor: "#059669", borderRadius: 16,
+                paddingVertical: 16, alignItems: "center", marginBottom: 12,
+                shadowColor: "#059669", shadowOpacity: 0.28,
+                shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4,
+                opacity: sendingQrRequest ? 0.7 : 1,
+              }}
             >
               {sendingQrRequest ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text className="text-white font-bold text-base">
-                  Send Approval Request To Admin
+                <Text style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>
+                  ✅  I've Paid — Notify Admin
                 </Text>
               )}
             </TouchableOpacity>
@@ -346,10 +453,14 @@ export default function PayScreen() {
 
           <TouchableOpacity
             onPress={() => router.replace("/(student)/home")}
-            className="bg-indigo-600 rounded-xl py-4 items-center"
+            style={{
+              backgroundColor: "#f0f2ff", borderWidth: 1.5, borderColor: "#c7d2fe",
+              borderRadius: 16, paddingVertical: 14, alignItems: "center",
+            }}
           >
-            <Text className="text-white font-bold text-base">Go to Home</Text>
+            <Text style={{ color: "#4f46e5", fontWeight: "700", fontSize: 14 }}>Go to Home</Text>
           </TouchableOpacity>
+
         </ScrollView>
       </SafeAreaView>
     );
@@ -385,41 +496,81 @@ export default function PayScreen() {
           </View>
         ) : (
           <>
-            {subscription?.scheduled_request ? (
-              <View className="bg-indigo-50 border-2 border-indigo-400 rounded-xl p-4 mb-5">
-                <Text className="text-indigo-700 font-bold text-base mb-1">
-                  Admin Payment Request
-                </Text>
-                <Text className="text-indigo-900 text-sm">
-                  Rs {Number(subscription.scheduled_request.amount).toLocaleString("en-IN")}
-                  {" · "}
-                  {subscription.scheduled_request.type === "half_month"
-                    ? "15-Day Lumpsum"
-                    : "Custom Amount"}
-                </Text>
-                <Text className="text-indigo-600 text-xs mt-0.5">
-                  {fmtDate(subscription.scheduled_request.valid_from)} - {fmtDate(subscription.scheduled_request.valid_until)}
-                </Text>
-                {subscription.scheduled_request.notes ? (
-                  <Text className="text-indigo-500 text-xs mt-1 italic">
-                    "{subscription.scheduled_request.notes}"
+            {subscription?.scheduled_request ? (() => {
+              const req = subscription.scheduled_request;
+              const planAmt = Number(req.amount ?? 0);
+              const deposit = Number(req.deposit_amount ?? 0);
+              const discount = req.discount_enabled ? Number(req.discount_amount ?? 0) : 0;
+              const total = req.total_amount != null
+                ? Number(req.total_amount)
+                : Math.max(0, planAmt + deposit - discount);
+              return (
+                <View style={{ backgroundColor: "#eef2ff", borderWidth: 2, borderColor: "#6366f1", borderRadius: 16, padding: 16, marginBottom: 20 }}>
+                  <Text style={{ color: "#4338ca", fontWeight: "800", fontSize: 15, marginBottom: 4 }}>
+                    Admin Payment Request
                   </Text>
-                ) : null}
-                <TouchableOpacity
-                  onPress={handleScheduledPay}
-                  disabled={processingScheduled}
-                  className={`mt-3 bg-indigo-600 rounded-xl py-3 items-center ${processingScheduled ? "opacity-70" : ""}`}
-                >
-                  {processingScheduled ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text className="text-white font-bold text-sm">
-                      Pay Rs {Number(subscription.scheduled_request.amount).toLocaleString("en-IN")} via Razorpay
+
+                  <View style={{ backgroundColor: "#fff", borderRadius: 10, padding: 12, marginBottom: 8 }}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 3 }}>
+                      <Text style={{ color: "#6b7280", fontSize: 13 }}>
+                        {req.type === "half_month" ? "15-Day Lumpsum" : "Plan fee"}
+                      </Text>
+                      <Text style={{ color: "#111827", fontWeight: "600", fontSize: 13 }}>
+                        ₹{planAmt.toLocaleString("en-IN")}
+                      </Text>
+                    </View>
+                    {deposit > 0 && (
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 3 }}>
+                        <Text style={{ color: "#059669", fontSize: 13 }}>+ Deposit</Text>
+                        <Text style={{ color: "#059669", fontWeight: "600", fontSize: 13 }}>
+                          ₹{deposit.toLocaleString("en-IN")}
+                        </Text>
+                      </View>
+                    )}
+                    {discount > 0 && (
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 3 }}>
+                        <Text style={{ color: "#ef4444", fontSize: 13 }}>− Discount</Text>
+                        <Text style={{ color: "#ef4444", fontWeight: "600", fontSize: 13 }}>
+                          ₹{discount.toLocaleString("en-IN")}
+                        </Text>
+                      </View>
+                    )}
+                    <View style={{ borderTopWidth: 1, borderColor: "#e5e7eb", marginTop: 6, paddingTop: 6, flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text style={{ color: "#111827", fontWeight: "700", fontSize: 15 }}>Total</Text>
+                      <Text style={{ color: "#4f46e5", fontWeight: "800", fontSize: 16 }}>
+                        ₹{total.toLocaleString("en-IN")}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={{ color: "#6366f1", fontSize: 12 }}>
+                    {fmtDate(req.valid_from)} → {fmtDate(req.valid_until)}
+                  </Text>
+                  {req.notes ? (
+                    <Text style={{ color: "#818cf8", fontSize: 12, marginTop: 2, fontStyle: "italic" }}>
+                      "{req.notes}"
                     </Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            ) : null}
+                  ) : null}
+
+                  <TouchableOpacity
+                    onPress={handleScheduledPay}
+                    disabled={processingScheduled}
+                    style={[
+                      { marginTop: 12, backgroundColor: "#4f46e5", borderRadius: 12, paddingVertical: 12, alignItems: "center" },
+                      processingScheduled && { opacity: 0.7 }
+                    ]}
+                  >
+                    {processingScheduled ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={{ color: "#fff", fontWeight: "700", fontSize: 14 }}>
+                        Pay ₹{total.toLocaleString("en-IN")} via Razorpay
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              );
+            })() : null}
 
             <Text className="text-sm text-gray-700 mb-3 font-semibold uppercase tracking-wide">
               {subscription?.scheduled_request ? "Or Choose a Different Plan" : "Select Plan"}
