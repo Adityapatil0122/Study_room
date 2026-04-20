@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useAuth } from "../../context/AuthContext";
+import Toast from "react-native-toast-message";
 
 const EDITABLE = ["name", "email", "address", "city", "state", "pincode"];
 
@@ -53,9 +54,19 @@ export default function ProfileScreen() {
             const updated = await api.updateStudentProfile(form);
             setProfile(updated);
             setEditing(false);
-            Alert.alert("Success", "Profile updated");
+            Toast.show({
+                type: "success",
+                text1: "Profile updated ✓",
+                text2: "Your details have been saved.",
+                visibilityTime: 2500,
+            });
         } catch (err) {
-            Alert.alert("Error", err?.message ?? "Failed to save profile");
+            Toast.show({
+                type: "error",
+                text1: "Update failed",
+                text2: err?.message ?? "Could not save profile.",
+                visibilityTime: 3000,
+            });
         } finally {
             setSaving(false);
         }
@@ -187,7 +198,24 @@ export default function ProfileScreen() {
                     </View>
                 ) : (
                     <TouchableOpacity
-                        onPress={logout}
+                        onPress={() => Alert.alert(
+                            "Logout",
+                            "Are you sure you want to log out?",
+                            [
+                                { text: "Cancel", style: "cancel" },
+                                {
+                                    text: "Logout", style: "destructive", onPress: () => {
+                                        Toast.show({
+                                            type: "info",
+                                            text1: "Logged out",
+                                            text2: "See you soon! 👋",
+                                            visibilityTime: 2000,
+                                        });
+                                        logout();
+                                    }
+                                },
+                            ]
+                        )}
                         className="border border-red-300 rounded-lg py-3 items-center"
                     >
                         <Text className="text-red-600 font-semibold">Logout</Text>

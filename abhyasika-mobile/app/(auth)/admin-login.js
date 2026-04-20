@@ -15,6 +15,7 @@ import { useAuth } from "../../context/AuthContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
+import Toast from "react-native-toast-message";
 
 export default function AdminLoginScreen() {
     const { login, authLoading, authError } = useAuth();
@@ -36,8 +37,19 @@ export default function AdminLoginScreen() {
     const handleLogin = async () => {
         try {
             await login(email, password);
+            Toast.show({
+                type: "success",
+                text1: "Welcome, Admin! 👋",
+                text2: "You are now signed in.",
+                visibilityTime: 2500,
+            });
         } catch (e) {
-            // Error handled in context
+            Toast.show({
+                type: "error",
+                text1: "Sign in failed",
+                text2: e?.message ?? "Invalid email or password.",
+                visibilityTime: 3000,
+            });
         }
     };
 

@@ -20,15 +20,18 @@ function MobileNav({
     <div className="sticky top-0 z-40 border-b border-white/60 bg-white/90 px-3 py-3 shadow-sm backdrop-blur transition-colors duration-300 dark:border-gray-800 dark:bg-gray-950/70 lg:hidden">
       <div className="mb-2 flex items-center justify-between rounded-2xl border border-slate-100 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900/70">
         <div className="flex items-center gap-2">
-          <img
-            src={logoSrc}
-            alt="Aaradhya Abhyasika"
-            className="h-12 w-12 rounded-full object-contain"
-          />
-          {/* <div className="text-xs font-semibold text-slate-500">
-            <p className="tracking-[0.2em] uppercase text-slate-400">Abhyasika</p>
-            <p className="text-slate-800">Admin Studio</p>
-          </div> */}
+          <div className="h-10 w-10 flex-shrink-0 rounded-xl bg-white shadow ring-2 ring-indigo-100 flex items-center justify-center overflow-hidden">
+            <img
+              src={logoSrc}
+              alt="Aradhya Abhyasika"
+              className="h-10 w-10 object-contain"
+              onError={(e) => { e.currentTarget.src = "/images/abhyasika-logo.png"; }}
+            />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-slate-800 dark:text-white leading-tight">Aradhya Abhyasika</p>
+            <p className="text-[10px] uppercase tracking-widest text-indigo-400">Admin Panel</p>
+          </div>
         </div>
         {allowedList.includes("settings") ? (
           <button

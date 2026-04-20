@@ -20,6 +20,7 @@ import { useRouter } from "expo-router";
 import { createApiClient } from "../../lib/apiClient";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import Toast from "react-native-toast-message";
 
 const SHIFTS = ["Morning", "Afternoon", "Evening", "Day"];
 const GENDERS = ["Male", "Female", "Other"];
@@ -150,8 +151,19 @@ export default function StudentRegisterScreen() {
                 aadhaar_file_type: aadhaarData?.mimeType ?? null,
                 registration_source: "student_app",
             });
+            Toast.show({
+                type: "success",
+                text1: "Account created! 🎉",
+                text2: "Welcome to Aradhya Abhyasika.",
+                visibilityTime: 3000,
+            });
         } catch (e) {
-            // Error captured in authError
+            Toast.show({
+                type: "error",
+                text1: "Registration failed",
+                text2: e?.message ?? "Please check your details and try again.",
+                visibilityTime: 3500,
+            });
         }
     };
 

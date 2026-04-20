@@ -211,6 +211,7 @@ export async function getSubscription(studentId, workspaceOwnerId) {
     scheduled_request: scheduledRequest
       ? {
           id: scheduledRequest.id,
+          plan_id: scheduledRequest.plan_id,
           type: scheduledRequest.type,
           amount: Number(scheduledRequest.amount),
           deposit_amount: Number(scheduledRequest.deposit_amount ?? 0),
@@ -244,6 +245,13 @@ export async function listStudentPayments(studentId, workspaceOwnerId) {
     [studentId, workspaceOwnerId]
   );
 
+  // Collect linked_payment_ids from Razorpay rows so we can exclude them from
+  // the "all" (offline) list — Razorpay payments land in BOTH tables via createPayment(),
+  // so without this filter they'd appear twice in the merged payment history.
+  const linkedIds = new Set(
+    onlinePayments.map((r) => r.linked_payment_id).filter(Boolean)
+  );
+
   const offlinePayments = await query(
     `SELECT py.*, p.name AS plan_name
      FROM payments py
@@ -263,12 +271,15 @@ export async function listStudentPayments(studentId, workspaceOwnerId) {
       valid_until: toDateString(row.valid_until),
       payment_date: row.payment_date ?? row.created_at,
     })),
-    all: offlinePayments.map((row) => ({
-      ...row,
-      valid_from: toDateString(row.valid_from),
-      valid_until: toDateString(row.valid_until),
-      includes_registration: toBoolean(row.includes_registration),
-    })),
+    // Exclude any payments already represented by a Razorpay online entry
+    all: offlinePayments
+      .filter((row) => !linkedIds.has(row.id))
+      .map((row) => ({
+        ...row,
+        valid_from: toDateString(row.valid_from),
+        valid_until: toDateString(row.valid_until),
+        includes_registration: toBoolean(row.includes_registration),
+      })),
   };
 }
 
@@ -422,6 +433,15 @@ export async function verifyRazorpayPaymentForStudent(
     [razorpay_payment_id, razorpay_signature, payment.id, pending.id]
   );
 
+  // Mark any open scheduled_payment_request for this student as 'paid'
+  // so the student's home screen no longer shows the "Pay Now" banner.
+  await query(
+    `UPDATE scheduled_payment_requests
+     SET status = 'paid'
+     WHERE student_id = ? AND workspace_owner_id = ? AND status = 'sent'`,
+    [studentId, workspaceOwnerId]
+  );
+
   return {
     status: "paid",
     student_payment_id: pending.id,
@@ -523,7 +543,7 @@ export async function previewQrPayment(
 export async function createQrPaymentRequest(
   studentId,
   workspaceOwnerId,
-  { plan_id, is_renewal }
+  { plan_id, is_renewal, scheduled_request_id }
 ) {
   const existingPending = await getLatestPendingQrPayment(
     studentId,
@@ -536,32 +556,71 @@ export async function createQrPaymentRequest(
     };
   }
 
-  const { plan, billing } = await buildQrPaymentContext(
-    studentId,
-    workspaceOwnerId,
-    { plan_id, is_renewal }
-  );
+  let usedPlanId, amount, valid_from, valid_until, planRow;
+
+  if (scheduled_request_id) {
+    // Use the admin's scheduled request — amount, dates, plan are already fixed there.
+    const req = await queryOne(
+      `SELECT spr.*, p.name AS plan_name, p.price AS plan_price
+       FROM scheduled_payment_requests spr
+       JOIN plans p ON p.id = spr.plan_id
+       WHERE spr.id = ? AND spr.workspace_owner_id = ? AND spr.student_id = ?
+       LIMIT 1`,
+      [scheduled_request_id, workspaceOwnerId, studentId]
+    );
+    if (!req) throw new AppError("Scheduled payment request not found", 404);
+    if (req.status !== "sent") throw new AppError(`Request is already ${req.status}`, 400);
+
+    // total_amount = amount + deposit - discount (pre-computed by admin)
+    const total =
+      req.total_amount !== null && req.total_amount !== undefined
+        ? Number(req.total_amount)
+        : Math.max(
+            0,
+            Number(req.amount) +
+              Number(req.deposit_amount ?? 0) -
+              Number(req.discount_amount ?? 0)
+          );
+
+    usedPlanId  = req.plan_id;
+    amount      = total;
+    valid_from  = toDateString(req.valid_from);
+    valid_until = toDateString(req.valid_until);
+    planRow     = { id: req.plan_id, name: req.plan_name, price: Number(req.plan_price) };
+  } else {
+    // No scheduled request — fall back to proration calculation.
+    const { plan, billing } = await buildQrPaymentContext(
+      studentId,
+      workspaceOwnerId,
+      { plan_id, is_renewal }
+    );
+    usedPlanId  = plan_id;
+    amount      = billing.amount;
+    valid_from  = billing.valid_from;
+    valid_until = billing.valid_until;
+    planRow     = { id: plan.id, name: plan.name, price: Number(plan.price) };
+  }
 
   const id = randomUUID();
   await query(
     `INSERT INTO pending_payments
        (id, workspace_owner_id, student_id, plan_id, amount, valid_from, valid_until, payment_mode, status)
      VALUES (?, ?, ?, ?, ?, ?, ?, 'qr', 'pending')`,
-    [id, workspaceOwnerId, studentId, plan_id, billing.amount, billing.valid_from, billing.valid_until]
+    [id, workspaceOwnerId, studentId, usedPlanId, amount, valid_from, valid_until]
   );
   const created = await getLatestPendingQrPayment(studentId, workspaceOwnerId);
 
   return {
     ...(created ?? {
       id,
-      plan_id,
-      amount: billing.amount,
-      valid_from: billing.valid_from,
-      valid_until: billing.valid_until,
+      plan_id: usedPlanId,
+      amount,
+      valid_from,
+      valid_until,
       submitted_at: new Date().toISOString(),
     }),
     already_pending: false,
-    plan: { id: plan.id, name: plan.name, price: Number(plan.price) },
+    plan: planRow,
   };
 }
 

@@ -2,6 +2,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -22,7 +23,6 @@ import {
   CalendarClock,
   CreditCard,
   History,
-  Home,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -776,12 +776,16 @@ export default function Dashboard() {
         >
           <View className="px-6 pb-6 border-b border-slate-100">
             <View className="flex-row items-center gap-3">
-              <View className="h-12 w-12 items-center justify-center rounded-xl bg-indigo-600">
-                <Home size={24} color="white" />
+              <View className="h-14 w-14 items-center justify-center rounded-2xl overflow-hidden bg-white border border-slate-100">
+                <Image
+                  source={require("../../assets/logo.png")}
+                  style={{ width: 56, height: 56 }}
+                  resizeMode="contain"
+                />
               </View>
               <View className="flex-1">
-                <Text className="text-xl font-bold text-slate-950">Abhyasika</Text>
-                <Text className="text-sm text-slate-500" numberOfLines={1}>{admin?.email || "Mobile admin"}</Text>
+                <Text className="text-base font-bold text-slate-950">Aardhya Abhyasika</Text>
+                <Text className="text-xs text-slate-500" numberOfLines={1}>{admin?.email || "Admin"}</Text>
               </View>
             </View>
           </View>

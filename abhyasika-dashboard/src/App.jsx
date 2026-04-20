@@ -121,6 +121,16 @@ function App() {
   );
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState("all");
+
+  const confirmLogout = () => {
+    if (window.confirm("Are you sure you want to log out?")) {
+      toast.info("Logged out successfully. See you soon! 👋", {
+        position: "top-right",
+        autoClose: 1800,
+      });
+      setTimeout(() => logout(), 400);
+    }
+  };
   const notificationRef = useRef(null);
   const hasSeenPendingNotificationsRef = useRef(false);
   const previousPendingNotificationIdsRef = useRef(new Set());
@@ -1506,7 +1516,7 @@ function App() {
           onNavigate={navigateTo}
           admin={admin}
           branding={branding}
-          onLogout={logout}
+          onLogout={confirmLogout}
           allowedViews={normalizedAllowedViews}
         />
         <div className="flex flex-1 flex-col">
@@ -1741,7 +1751,7 @@ function App() {
                       </div> */}
                     </div>
                     <button
-                      onClick={logout}
+                      onClick={confirmLogout}
                       className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:text-slate-300 dark:hover:border-rose-500 dark:hover:bg-rose-500/10 dark:hover:text-rose-200"
                     >
                       <LucideIcon name="Power" className="h-4.5 w-4.5" />
@@ -1794,7 +1804,7 @@ function App() {
                     Admissions QR
                   </button>
                   <button
-                    onClick={logout}
+                    onClick={confirmLogout}
                     className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
                   >
                     <LucideIcon name="Power" className="h-4 w-4" />

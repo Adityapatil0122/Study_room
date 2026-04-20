@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../context/AuthContext";
+import Toast from "react-native-toast-message";
 
 const sortSeatsByNumber = (items = []) =>
     [...items].sort((left, right) =>
@@ -74,13 +75,20 @@ export default function SeatSelectScreen() {
                         setSelectingId(seat.id);
                         try {
                             await api.selectSeat(seat.id);
-                            Alert.alert(
-                                "Seat Assigned!",
-                                `Seat #${seat.seat_number} is now yours.`,
-                                [{ text: "OK", onPress: () => router.replace("/(student)/home") }]
-                            );
+                            Toast.show({
+                                type: "success",
+                                text1: `Seat #${seat.seat_number} assigned! 🪑`,
+                                text2: "Your seat is now confirmed.",
+                                visibilityTime: 2500,
+                            });
+                            router.replace("/(student)/home");
                         } catch (err) {
-                            Alert.alert("Error", err?.message ?? "Could not assign seat.");
+                            Toast.show({
+                                type: "error",
+                                text1: "Seat selection failed",
+                                text2: err?.message ?? "Could not assign seat.",
+                                visibilityTime: 3000,
+                            });
                         } finally {
                             setSelectingId(null);
                         }

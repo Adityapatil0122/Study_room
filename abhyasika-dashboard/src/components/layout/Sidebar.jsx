@@ -20,16 +20,23 @@ function Sidebar({
     <aside className="relative hidden w-64 flex-none bg-white/70 px-5 py-6 shadow-2xl shadow-indigo-100/70 backdrop-blur-2xl transition-colors duration-300 dark:bg-gray-900/80 dark:text-slate-100 dark:shadow-black/50 lg:flex">
       <div className="pointer-events-none absolute inset-0 -z-10 rounded-3xl bg-gradient-to-b from-indigo-100/70 via-white/70 to-white dark:from-gray-900/80 dark:via-gray-900/60 dark:to-gray-950/80" />
       <div className="flex h-full flex-col">
-        <div className="">
-          <div className="mx-auto bg-gradient-to-br flex h-12 w-15 items-center justify-center rounded-3xl ">
+        <div className="flex items-center gap-3 px-1 pb-4 border-b border-slate-100 dark:border-gray-700 mb-2">
+          <div className="h-12 w-12 flex-shrink-0 rounded-2xl bg-white shadow-md ring-2 ring-indigo-100 flex items-center justify-center overflow-hidden">
             <img
               src={logoSrc}
-              alt="Aaradhya Abhyasika"
-              className="h-20 w-20 w-auto rounded-3xl"
+              alt="Aradhya Abhyasika"
+              className="h-12 w-12 object-contain"
+              onError={(e) => { e.currentTarget.src = "/images/abhyasika-logo.png"; }}
             />
           </div>
-          {/* <p className="mt-3 text-xs uppercase tracking-[0.2em] text-slate-400">Welcome to</p>
-          <h1 className="text-base font-semibold text-slate-800">Aaradhya Abhyasika</h1> */}
+          <div className="min-w-0">
+            <h1 className="text-sm font-bold leading-tight text-slate-800 dark:text-white truncate">
+              Aradhya Abhyasika
+            </h1>
+            <p className="text-[10px] uppercase tracking-widest text-indigo-400 mt-0.5">
+              Admin Panel
+            </p>
+          </div>
         </div>
  
         <nav className="mt-8 flex-1 space-y-2">

@@ -15,6 +15,7 @@ import { useAuth } from "../../context/AuthContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
+import Toast from "react-native-toast-message";
 
 export default function StudentLoginScreen() {
     const { studentLogin, authLoading, authError } = useAuth();
@@ -35,8 +36,19 @@ export default function StudentLoginScreen() {
     const handleLogin = async () => {
         try {
             await studentLogin(email, password);
+            Toast.show({
+                type: "success",
+                text1: "Welcome back! 👋",
+                text2: "You are now logged in.",
+                visibilityTime: 2500,
+            });
         } catch (e) {
-            // Error handled in context
+            Toast.show({
+                type: "error",
+                text1: "Login failed",
+                text2: e?.message ?? "Invalid email or password.",
+                visibilityTime: 3000,
+            });
         }
     };
 

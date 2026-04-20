@@ -260,6 +260,15 @@ export async function approvePendingPayment(workspaceOwnerId, pendingId, audit =
     [pendingId]
   );
 
+  // Mark any open scheduled_payment_request for this student as 'paid'
+  // so the student's home screen no longer shows the "Pay Now" banner.
+  await query(
+    `UPDATE scheduled_payment_requests
+     SET status = 'paid'
+     WHERE student_id = ? AND workspace_owner_id = ? AND status = 'sent'`,
+    [pending.student_id, workspaceOwnerId]
+  );
+
   return { payment, student };
 }
 

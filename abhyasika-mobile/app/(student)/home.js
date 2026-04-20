@@ -6,8 +6,10 @@ import {
     RefreshControl,
     ActivityIndicator,
     Image,
+    Alert,
 } from "react-native";
-import { useCallback, useState } from "react";
+import { useCallback, useState, useRef } from "react";
+import Toast from "react-native-toast-message";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -21,6 +23,8 @@ export default function StudentHomeScreen() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState("");
+    // Track previous pending_qr so we can detect when admin approves it
+    const prevPendingQrRef = useRef(undefined);
 
     const load = useCallback(async () => {
         try {
@@ -29,6 +33,22 @@ export default function StudentHomeScreen() {
                 api.getStudentSubscription(),
                 api.listMyPayments(),
             ]);
+
+            // Detect QR payment approval: was pending before, now it's gone and plan is active
+            const wasPending = prevPendingQrRef.current !== undefined
+                ? Boolean(prevPendingQrRef.current)
+                : false;
+            const isNowApproved = wasPending && !sub?.pending_qr && sub?.plan;
+            if (isNowApproved) {
+                Toast.show({
+                    type: "success",
+                    text1: "Payment approved! 🎉",
+                    text2: "Your QR payment has been approved by admin.",
+                    visibilityTime: 4000,
+                });
+            }
+            prevPendingQrRef.current = sub?.pending_qr ?? null;
+
             setSubscription(sub);
             // listMyPayments returns { all: [...], online: [...] } or a flat array
             // Merge offline (all) and online payments, sort newest first
@@ -69,6 +89,27 @@ export default function StudentHomeScreen() {
         load();
     };
 
+    const handleLogout = () => {
+        Alert.alert(
+            "Logout",
+            "Are you sure you want to log out?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Logout", style: "destructive", onPress: () => {
+                        Toast.show({
+                            type: "info",
+                            text1: "Logged out",
+                            text2: "See you soon! 👋",
+                            visibilityTime: 2000,
+                        });
+                        logout();
+                    }
+                },
+            ]
+        );
+    };
+
     return (
         <SafeAreaView className="flex-1 bg-gray-50">
             <StatusBar style="dark" />
@@ -93,7 +134,7 @@ export default function StudentHomeScreen() {
                         </View>
                     </View>
                     <TouchableOpacity
-                        onPress={logout}
+                        onPress={handleLogout}
                         className="px-3 py-2 border border-gray-300 rounded-lg"
                     >
                         <Text className="text-gray-700 text-sm">Logout</Text>
@@ -218,8 +259,14 @@ export default function StudentHomeScreen() {
                             </View>
                         ) : null}
 
-                        {/* Show payment button only when: no plan, plan expired, or plan expiring in 7 days */}
+                        {/* Show payment button only when:
+                            - not on hold
+                            - no pending QR awaiting approval
+                            - no active scheduled request from admin
+                            - no plan, or plan expired/expiring in 7 days */}
                         {subscription?.membership_status !== "on_hold" &&
+                        !subscription?.pending_qr &&
+                        !subscription?.scheduled_request &&
                         (!subscription?.plan || (subscription?.days_remaining !== null && subscription?.days_remaining <= 7)) ? (
                             <TouchableOpacity
                                 onPress={() => router.push("/(student)/pay")}
