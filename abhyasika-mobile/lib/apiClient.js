@@ -3,6 +3,8 @@ import { clearStoredSession, getStoredSession } from "./sessionStorage.js";
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://10.0.2.2:4000/api";
 
+const CONNECTION_ERROR_MESSAGE = `Cannot reach the API server at ${API_BASE_URL}. Make sure the backend is running and this device can access that host.`;
+
 function asArray(data, keys = []) {
   if (Array.isArray(data)) {
     return data;
@@ -39,11 +41,16 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
     headers.Authorization = `Bearer ${session.access_token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    throw new Error(CONNECTION_ERROR_MESSAGE);
+  }
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -206,6 +213,14 @@ export function createApiClient() {
       return request(`/seats/${seatId}/deallocate`, {
         method: "POST",
         body: payload?.audit ? { audit: payload.audit } : undefined,
+      });
+    },
+
+    // Send specific available seat options to a student for them to pick from
+    async sendSeatsToStudent(studentId, seatIds) {
+      return request(`/admin/students/${studentId}/offer-seats`, {
+        method: "POST",
+        body: { seat_ids: seatIds },
       });
     },
 
@@ -408,6 +423,11 @@ export function createApiClient() {
       });
     },
 
+    // Returns only the seats admin has offered to this student (post-payment)
+    async getOfferedSeats() {
+      return asArray(await request("/student/seats/offered"), ["seats"]);
+    },
+
     // Upload Aadhaar document (image or PDF) – returns { url, mimeType }
     // Uses a public endpoint so it works during registration (no auth required)
     async uploadAadhaarFile(fileUri, mimeType, fileName) {
@@ -417,10 +437,15 @@ export function createApiClient() {
         name: fileName ?? "aadhaar",
         type: mimeType ?? "application/octet-stream",
       });
-      const response = await fetch(`${API_BASE_URL}/student-auth/upload-id-proof`, {
-        method: "POST",
-        body: formData,
-      });
+      let response;
+      try {
+        response = await fetch(`${API_BASE_URL}/student-auth/upload-id-proof`, {
+          method: "POST",
+          body: formData,
+        });
+      } catch {
+        throw new Error(CONNECTION_ERROR_MESSAGE);
+      }
       const data = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(data?.error?.message ?? data?.message ?? "Upload failed");

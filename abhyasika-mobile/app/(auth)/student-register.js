@@ -22,8 +22,53 @@ import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import Toast from "react-native-toast-message";
 
-const SHIFTS = ["Morning", "Afternoon", "Evening", "Day"];
 const GENDERS = ["Male", "Female", "Other"];
+const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
+
+// ── Verhoeff algorithm tables for Aadhaar checksum validation ─────────────
+const VD = [
+    [0,1,2,3,4,5,6,7,8,9],
+    [1,2,3,4,0,6,7,8,9,5],
+    [2,3,4,0,1,7,8,9,5,6],
+    [3,4,0,1,2,8,9,5,6,7],
+    [4,0,1,2,3,9,5,6,7,8],
+    [5,9,8,7,6,0,4,3,2,1],
+    [6,5,9,8,7,1,0,4,3,2],
+    [7,6,5,9,8,2,1,0,4,3],
+    [8,7,6,5,9,3,2,1,0,4],
+    [9,8,7,6,5,4,3,2,1,0],
+];
+const VP = [
+    [0,1,2,3,4,5,6,7,8,9],
+    [1,5,7,6,2,8,3,0,9,4],
+    [5,8,0,3,7,9,6,1,4,2],
+    [8,9,1,6,0,4,3,5,2,7],
+    [9,4,5,3,1,2,6,8,7,0],
+    [4,2,8,6,5,7,3,9,0,1],
+    [2,7,9,3,8,0,6,4,1,5],
+    [7,0,4,6,9,1,3,2,5,8],
+];
+
+function validateAadhaar(num) {
+    const clean = num.replace(/\s/g, "");
+    // Must be 12 digits, not starting with 0 or 1, not all same digit
+    if (!/^[2-9][0-9]{11}$/.test(clean)) return false;
+    if (/^(.)\1+$/.test(clean)) return false;
+    // Verhoeff checksum
+    let c = 0;
+    const digits = clean.split("").reverse().map(Number);
+    for (let i = 0; i < digits.length; i++) {
+        c = VD[c][VP[i % 8][digits[i]]];
+    }
+    return c === 0;
+}
+
+function validatePAN(pan) {
+    const clean = pan.trim().toUpperCase();
+    // Format: 5 letters + 4 digits + 1 letter; 4th char must be valid entity type
+    if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(clean)) return false;
+    return "PCHABFTLJG".includes(clean[3]);
+}
 
 const api = createApiClient();
 
@@ -47,24 +92,49 @@ export default function StudentRegisterScreen() {
         confirmPassword: "",
         phone: "",
         gender: "",
-        preferred_shift: "Morning",
-        deposit_amount: "",
     });
-    // Aadhaar file state: { uri, name, mimeType } | null
-    const [aadhaarFile, setAadhaarFile] = useState(null);
-    const [uploadingAadhaar, setUploadingAadhaar] = useState(false);
-    const [uploadedAadhaar, setUploadedAadhaar] = useState(null); // { url, mimeType }
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+    // ID proof
+    const [idDocType, setIdDocType] = useState("aadhaar"); // "aadhaar" | "pan"
+    const [idNumber, setIdNumber] = useState("");
+    const [idNumberError, setIdNumberError] = useState("");
+
+    // File upload
+    const [idFile, setIdFile] = useState(null); // { uri, name, mimeType, size }
+    const [uploadingId, setUploadingId] = useState(false);
+    const [uploadedId, setUploadedId] = useState(null); // { url, mimeType }
     const [localError, setLocalError] = useState("");
 
     const set = (key) => (value) =>
         setForm((prev) => ({ ...prev, [key]: value }));
 
-    // ── Aadhaar pickers ──────────────────────────────────────────────────────
+    // ── Real-time ID number validation ───────────────────────────────────────
+    const onIdNumberChange = (raw) => {
+        const val = idDocType === "aadhaar"
+            ? raw.replace(/\D/g, "").slice(0, 12)
+            : raw.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
+        setIdNumber(val);
+        if (!val) { setIdNumberError(""); return; }
+        if (idDocType === "aadhaar") {
+            setIdNumberError(val.length === 12 ? (validateAadhaar(val) ? "" : "Invalid Aadhaar number") : "");
+        } else {
+            setIdNumberError(val.length === 10 ? (validatePAN(val) ? "" : "Invalid PAN (format: ABCDE1234F)") : "");
+        }
+    };
 
-    const pickAadhaarImage = async () => {
+    const switchDocType = (type) => {
+        setIdDocType(type);
+        setIdNumber("");
+        setIdNumberError("");
+    };
+
+    // ── File pickers with 5 MB guard ─────────────────────────────────────────
+    const pickImage = async () => {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== "granted") {
-            Alert.alert("Permission needed", "Allow access to your photos to upload Aadhaar.");
+            Alert.alert("Permission needed", "Allow access to your photos to upload ID proof.");
             return;
         }
         const result = await ImagePicker.launchImageLibraryAsync({
@@ -74,52 +144,47 @@ export default function StudentRegisterScreen() {
         });
         if (!result.canceled && result.assets?.length > 0) {
             const asset = result.assets[0];
-            setAadhaarFile({
-                uri: asset.uri,
-                name: asset.fileName ?? "aadhaar.jpg",
-                mimeType: asset.mimeType ?? "image/jpeg",
-            });
-            setUploadedAadhaar(null);
+            if (asset.fileSize && asset.fileSize > MAX_FILE_BYTES) {
+                Alert.alert("File too large", "Please select an image under 5 MB.");
+                return;
+            }
+            setIdFile({ uri: asset.uri, name: asset.fileName ?? "id_proof.jpg", mimeType: asset.mimeType ?? "image/jpeg", size: asset.fileSize });
+            setUploadedId(null);
         }
     };
 
-    const pickAadhaarPdf = async () => {
+    const pickPdf = async () => {
         const result = await DocumentPicker.getDocumentAsync({
             type: "application/pdf",
             copyToCacheDirectory: true,
         });
         if (!result.canceled && result.assets?.length > 0) {
             const asset = result.assets[0];
-            setAadhaarFile({
-                uri: asset.uri,
-                name: asset.name ?? "aadhaar.pdf",
-                mimeType: "application/pdf",
-            });
-            setUploadedAadhaar(null);
+            if (asset.size && asset.size > MAX_FILE_BYTES) {
+                Alert.alert("File too large", "Please select a PDF under 5 MB.");
+                return;
+            }
+            setIdFile({ uri: asset.uri, name: asset.name ?? "id_proof.pdf", mimeType: "application/pdf", size: asset.size });
+            setUploadedId(null);
         }
     };
 
-    const uploadAadhaar = async () => {
-        if (!aadhaarFile) return null;
-        setUploadingAadhaar(true);
+    const uploadId = async () => {
+        if (!idFile) return null;
+        setUploadingId(true);
         try {
-            const data = await api.uploadAadhaarFile(
-                aadhaarFile.uri,
-                aadhaarFile.mimeType,
-                aadhaarFile.name
-            );
-            setUploadedAadhaar(data);
+            const data = await api.uploadAadhaarFile(idFile.uri, idFile.mimeType, idFile.name);
+            setUploadedId(data);
             return data;
         } catch (err) {
-            Alert.alert("Upload failed", err.message ?? "Could not upload Aadhaar file.");
+            Alert.alert("Upload failed", err.message ?? "Could not upload ID proof.");
             return null;
         } finally {
-            setUploadingAadhaar(false);
+            setUploadingId(false);
         }
     };
 
     // ── Submit ───────────────────────────────────────────────────────────────
-
     const handleRegister = async () => {
         setLocalError("");
 
@@ -131,11 +196,18 @@ export default function StudentRegisterScreen() {
         if (phoneDigits.length !== 10) { setLocalError("Phone must be 10 digits"); return; }
         if (!form.gender) { setLocalError("Please select a gender"); return; }
 
-        // Upload Aadhaar if selected but not yet uploaded
-        let aadhaarData = uploadedAadhaar;
-        if (aadhaarFile && !uploadedAadhaar) {
-            aadhaarData = await uploadAadhaar();
-            if (!aadhaarData) return; // Upload failed; error already shown
+        if (idNumber.trim()) {
+            const valid = idDocType === "aadhaar" ? validateAadhaar(idNumber) : validatePAN(idNumber);
+            if (!valid) {
+                setLocalError(idDocType === "aadhaar" ? "Invalid Aadhaar number" : "Invalid PAN number");
+                return;
+            }
+        }
+
+        let idData = uploadedId;
+        if (idFile && !uploadedId) {
+            idData = await uploadId();
+            if (!idData) return;
         }
 
         try {
@@ -145,10 +217,10 @@ export default function StudentRegisterScreen() {
                 password: form.password,
                 phone: phoneDigits,
                 gender: form.gender,
-                preferred_shift: form.preferred_shift,
-                deposit_amount: Number(form.deposit_amount) || 0,
-                aadhaar_file_url: aadhaarData?.url ?? null,
-                aadhaar_file_type: aadhaarData?.mimeType ?? null,
+                id_proof_type: idNumber.trim() ? idDocType : null,
+                id_proof_number: idNumber.trim() || null,
+                aadhaar_file_url: idData?.url ?? null,
+                aadhaar_file_type: idData?.mimeType ?? null,
                 registration_source: "student_app",
             });
             Toast.show({
@@ -167,11 +239,8 @@ export default function StudentRegisterScreen() {
         }
     };
 
-    const aadhaarLabel = aadhaarFile
-        ? aadhaarFile.name
-        : uploadedAadhaar
-        ? "Uploaded ✓"
-        : null;
+    const idDocLabel = idDocType === "aadhaar" ? "Aadhaar" : "PAN Card";
+    const idFileLabel = idFile ? idFile.name : uploadedId ? "Uploaded ✓" : null;
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
@@ -210,11 +279,45 @@ export default function StudentRegisterScreen() {
                         </Field>
 
                         <Field label="Password">
-                            <TextInput style={inputStyle} placeholder="At least 6 characters" placeholderTextColor="#9ca3af" value={form.password} onChangeText={set("password")} secureTextEntry returnKeyType="next" />
+                            <View style={{ position: "relative" }}>
+                                <TextInput
+                                    style={[inputStyle, { paddingRight: 50 }]}
+                                    placeholder="At least 6 characters"
+                                    placeholderTextColor="#9ca3af"
+                                    value={form.password}
+                                    onChangeText={set("password")}
+                                    secureTextEntry={!showPassword}
+                                    returnKeyType="next"
+                                />
+                                <TouchableOpacity
+                                    onPress={() => setShowPassword(v => !v)}
+                                    style={{ position: "absolute", right: 14, top: 0, bottom: 0, justifyContent: "center" }}
+                                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                >
+                                    <Text style={{ fontSize: 17 }}>{showPassword ? "🙈" : "👁️"}</Text>
+                                </TouchableOpacity>
+                            </View>
                         </Field>
 
                         <Field label="Confirm Password">
-                            <TextInput style={inputStyle} placeholder="Re-enter password" placeholderTextColor="#9ca3af" value={form.confirmPassword} onChangeText={set("confirmPassword")} secureTextEntry returnKeyType="done" />
+                            <View style={{ position: "relative" }}>
+                                <TextInput
+                                    style={[inputStyle, { paddingRight: 50 }]}
+                                    placeholder="Re-enter password"
+                                    placeholderTextColor="#9ca3af"
+                                    value={form.confirmPassword}
+                                    onChangeText={set("confirmPassword")}
+                                    secureTextEntry={!showConfirmPassword}
+                                    returnKeyType="done"
+                                />
+                                <TouchableOpacity
+                                    onPress={() => setShowConfirmPassword(v => !v)}
+                                    style={{ position: "absolute", right: 14, top: 0, bottom: 0, justifyContent: "center" }}
+                                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                >
+                                    <Text style={{ fontSize: 17 }}>{showConfirmPassword ? "🙈" : "👁️"}</Text>
+                                </TouchableOpacity>
+                            </View>
                         </Field>
 
                         <Field label="Gender">
@@ -236,109 +339,116 @@ export default function StudentRegisterScreen() {
                             </View>
                         </Field>
 
-                        <Field label="Preferred Shift">
-                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                                {SHIFTS.map((s) => (
-                                    <TouchableOpacity
-                                        key={s}
-                                        onPress={() => set("preferred_shift")(s)}
-                                        activeOpacity={0.8}
-                                        style={{
-                                            paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5,
-                                            backgroundColor: form.preferred_shift === s ? "#4f46e5" : "#fff",
-                                            borderColor: form.preferred_shift === s ? "#4f46e5" : "#d1d5db",
-                                        }}
-                                    >
-                                        <Text style={{ color: form.preferred_shift === s ? "#fff" : "#374151", fontWeight: "500" }}>{s}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        </Field>
+                        {/* ── ID Proof ─────────────────────────────────────────── */}
+                        <Field label="ID Proof  —  optional">
+                            <View style={{ gap: 10 }}>
+                                {/* Aadhaar / PAN toggle */}
+                                <View style={{ flexDirection: "row", gap: 8 }}>
+                                    {[
+                                        { key: "aadhaar", label: "Aadhaar Card" },
+                                        { key: "pan",     label: "PAN Card"     },
+                                    ].map(({ key, label }) => (
+                                        <TouchableOpacity
+                                            key={key}
+                                            onPress={() => switchDocType(key)}
+                                            activeOpacity={0.8}
+                                            style={{
+                                                paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5,
+                                                backgroundColor: idDocType === key ? "#4f46e5" : "#fff",
+                                                borderColor:     idDocType === key ? "#4f46e5" : "#d1d5db",
+                                            }}
+                                        >
+                                            <Text style={{ color: idDocType === key ? "#fff" : "#374151", fontWeight: "600", fontSize: 13 }}>
+                                                {label}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
 
-                        {/* ── Deposit Amount ─────────────────────────────────── */}
-                        <Field label="Deposit Amount (₹)  —  optional">
-                            <TextInput
-                                style={inputStyle}
-                                placeholder="0"
-                                placeholderTextColor="#9ca3af"
-                                value={form.deposit_amount}
-                                onChangeText={set("deposit_amount")}
-                                keyboardType="number-pad"
-                            />
-                            <Text style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
-                                Security deposit you're paying at the time of registration
-                            </Text>
-                        </Field>
+                                {/* Card number input with live validation */}
+                                <View>
+                                    <TextInput
+                                        style={[inputStyle, idNumberError ? { borderColor: "#ef4444", borderWidth: 1.5 } : null]}
+                                        placeholder={idDocType === "aadhaar" ? "12-digit Aadhaar number" : "e.g. ABCDE1234F"}
+                                        placeholderTextColor="#9ca3af"
+                                        value={idNumber}
+                                        onChangeText={onIdNumberChange}
+                                        keyboardType={idDocType === "aadhaar" ? "number-pad" : "default"}
+                                        autoCapitalize={idDocType === "pan" ? "characters" : "none"}
+                                        maxLength={idDocType === "aadhaar" ? 12 : 10}
+                                    />
+                                    {idNumberError ? (
+                                        <Text style={{ color: "#ef4444", fontSize: 12, marginTop: 3 }}>✗ {idNumberError}</Text>
+                                    ) : idNumber.length > 0 && !idNumberError && (
+                                        (idDocType === "aadhaar" && idNumber.length === 12) ||
+                                        (idDocType === "pan"     && idNumber.length === 10)
+                                    ) ? (
+                                        <Text style={{ color: "#16a34a", fontSize: 12, marginTop: 3 }}>✓ Valid {idDocLabel} number</Text>
+                                    ) : null}
+                                </View>
 
-                        {/* ── Aadhaar Upload ─────────────────────────────────── */}
-                        <Field label="Aadhaar Card  —  optional">
-                            <View style={{ gap: 8 }}>
+                                {/* Photo / PDF buttons */}
                                 <View style={{ flexDirection: "row", gap: 8 }}>
                                     <TouchableOpacity
-                                        onPress={pickAadhaarImage}
+                                        onPress={pickImage}
                                         activeOpacity={0.8}
                                         style={{
                                             flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5,
-                                            borderColor: "#d1d5db", alignItems: "center",
-                                            backgroundColor: "#f9fafb",
+                                            borderColor: "#d1d5db", alignItems: "center", backgroundColor: "#f9fafb",
                                         }}
                                     >
                                         <Text style={{ color: "#4f46e5", fontWeight: "600", fontSize: 14 }}>📷 Photo / Image</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
-                                        onPress={pickAadhaarPdf}
+                                        onPress={pickPdf}
                                         activeOpacity={0.8}
                                         style={{
                                             flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5,
-                                            borderColor: "#d1d5db", alignItems: "center",
-                                            backgroundColor: "#f9fafb",
+                                            borderColor: "#d1d5db", alignItems: "center", backgroundColor: "#f9fafb",
                                         }}
                                     >
                                         <Text style={{ color: "#4f46e5", fontWeight: "600", fontSize: 14 }}>📄 PDF</Text>
                                     </TouchableOpacity>
                                 </View>
 
-                                {aadhaarFile && !uploadedAadhaar && (
+                                {idFile && !uploadedId && (
                                     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                                         <Text style={{ flex: 1, fontSize: 12, color: "#374151" }} numberOfLines={1}>
-                                            {aadhaarLabel}
+                                            {idFileLabel}
                                         </Text>
                                         <TouchableOpacity
-                                            onPress={uploadAadhaar}
-                                            disabled={uploadingAadhaar}
-                                            style={{
-                                                paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
-                                                backgroundColor: "#4f46e5",
-                                            }}
+                                            onPress={uploadId}
+                                            disabled={uploadingId}
+                                            style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, backgroundColor: "#4f46e5" }}
                                         >
-                                            {uploadingAadhaar
+                                            {uploadingId
                                                 ? <ActivityIndicator color="#fff" size="small" />
                                                 : <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Upload</Text>
                                             }
                                         </TouchableOpacity>
-                                        <TouchableOpacity onPress={() => setAadhaarFile(null)}>
+                                        <TouchableOpacity onPress={() => setIdFile(null)}>
                                             <Text style={{ color: "#ef4444", fontSize: 13 }}>✕</Text>
                                         </TouchableOpacity>
                                     </View>
                                 )}
 
-                                {uploadedAadhaar && (
+                                {uploadedId && (
                                     <View style={{
                                         flexDirection: "row", alignItems: "center", gap: 8,
                                         backgroundColor: "#ecfdf5", borderRadius: 8, padding: 10,
                                     }}>
                                         <Text style={{ color: "#065f46", fontWeight: "600", fontSize: 13, flex: 1 }}>
-                                            ✓ Aadhaar uploaded
+                                            ✓ {idDocLabel} uploaded
                                         </Text>
-                                        <TouchableOpacity onPress={() => { setAadhaarFile(null); setUploadedAadhaar(null); }}>
+                                        <TouchableOpacity onPress={() => { setIdFile(null); setUploadedId(null); }}>
                                             <Text style={{ color: "#6b7280", fontSize: 12 }}>Change</Text>
                                         </TouchableOpacity>
                                     </View>
                                 )}
 
-                                {!aadhaarFile && !uploadedAadhaar && (
+                                {!idFile && !uploadedId && (
                                     <Text style={{ fontSize: 12, color: "#9ca3af" }}>
-                                        Upload a photo or PDF of your Aadhaar card
+                                        Upload a photo or PDF of your {idDocLabel} (max 5 MB)
                                     </Text>
                                 )}
                             </View>
@@ -351,9 +461,12 @@ export default function StudentRegisterScreen() {
                         ) : null}
 
                         <TouchableOpacity
-                            style={[{ backgroundColor: "#4f46e5", borderRadius: 12, paddingVertical: 15, alignItems: "center", marginTop: 20 }, (authLoading || uploadingAadhaar) && { opacity: 0.7 }]}
+                            style={[
+                                { backgroundColor: "#4f46e5", borderRadius: 12, paddingVertical: 15, alignItems: "center", marginTop: 20 },
+                                (authLoading || uploadingId) && { opacity: 0.7 },
+                            ]}
                             onPress={handleRegister}
-                            disabled={authLoading || uploadingAadhaar}
+                            disabled={authLoading || uploadingId}
                             activeOpacity={0.85}
                         >
                             <Text style={{ color: "#fff", fontWeight: "700", fontSize: 17 }}>

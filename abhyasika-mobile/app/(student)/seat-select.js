@@ -15,10 +15,12 @@ import { useRouter } from "expo-router";
 import { useAuth } from "../../context/AuthContext";
 import Toast from "react-native-toast-message";
 
+const INDIGO = "#4f46e5";
+
 const sortSeatsByNumber = (items = []) =>
-    [...items].sort((left, right) =>
-        String(left?.seat_number ?? "").localeCompare(
-            String(right?.seat_number ?? ""),
+    [...items].sort((a, b) =>
+        String(a?.seat_number ?? "").localeCompare(
+            String(b?.seat_number ?? ""),
             undefined,
             { numeric: true, sensitivity: "base" }
         )
@@ -38,35 +40,31 @@ export default function SeatSelectScreen() {
     const load = useCallback(async () => {
         try {
             setError("");
-            const data = await api.listAvailableSeats();
+            // Only fetch seats admin specifically offered to this student
+            const data = await api.getOfferedSeats();
             setSeats(data ?? []);
         } catch (err) {
-            setError(err?.message ?? "Failed to load seats");
+            setError(err?.message ?? "Failed to load seat options");
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
     }, [api]);
 
-    useEffect(() => {
-        load();
-    }, [load]);
+    useEffect(() => { load(); }, [load]);
 
-    const onRefresh = () => {
-        setRefreshing(true);
-        load();
-    };
+    const onRefresh = () => { setRefreshing(true); load(); };
 
     const sortedSeats = useMemo(() => sortSeatsByNumber(seats), [seats]);
-    const seatGap = 10;
-    const seatColumns = width < 360 ? 4 : width < 520 ? 5 : 6;
-    const seatCardWidth =
-        (Math.max(width - 32, 280) - seatGap * (seatColumns - 1)) / seatColumns;
+
+    const seatGap     = 12;
+    const cols        = width < 360 ? 4 : width < 520 ? 5 : 6;
+    const seatSize    = (Math.max(width - 40, 280) - seatGap * (cols - 1)) / cols;
 
     const handleSelectSeat = (seat) => {
         Alert.alert(
-            "Confirm Seat Selection",
-            `Select Seat #${seat.seat_number}? This cannot be changed without admin help.`,
+            "Confirm Seat",
+            `Choose Seat #${seat.seat_number}? This cannot be changed without admin help.`,
             [
                 { text: "Cancel", style: "cancel" },
                 {
@@ -77,15 +75,15 @@ export default function SeatSelectScreen() {
                             await api.selectSeat(seat.id);
                             Toast.show({
                                 type: "success",
-                                text1: `Seat #${seat.seat_number} assigned! 🪑`,
-                                text2: "Your seat is now confirmed.",
+                                text1: `Seat #${seat.seat_number} confirmed! 🪑`,
+                                text2: "Your seat is now assigned.",
                                 visibilityTime: 2500,
                             });
                             router.replace("/(student)/home");
                         } catch (err) {
                             Toast.show({
                                 type: "error",
-                                text1: "Seat selection failed",
+                                text1: "Selection failed",
                                 text2: err?.message ?? "Could not assign seat.",
                                 visibilityTime: 3000,
                             });
@@ -99,85 +97,127 @@ export default function SeatSelectScreen() {
     };
 
     return (
-        <SafeAreaView className="flex-1 bg-gray-50">
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#f4f5fb" }}>
             <StatusBar style="dark" />
-            <View className="bg-white border-b border-gray-200 px-4 pb-2 pt-4 flex-row items-center">
-                <TouchableOpacity onPress={() => router.back()} className="mr-3 p-2">
-                    <Text className="text-base text-indigo-600">&lt;</Text>
+
+            {/* Nav bar */}
+            <View style={{
+                flexDirection: "row", alignItems: "center",
+                backgroundColor: "#fff", paddingHorizontal: 16, paddingVertical: 14,
+                borderBottomWidth: 1, borderBottomColor: "#f0f0f8",
+                shadowColor: INDIGO, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
+            }}>
+                <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 12, padding: 4 }}>
+                    <Text style={{ color: INDIGO, fontSize: 14, fontWeight: "700" }}>← Back</Text>
                 </TouchableOpacity>
                 <View>
-                    <Text className="text-2xl font-bold text-gray-900">Choose Your Seat</Text>
-                    <Text className="text-sm text-gray-500">
-                        Tap an available seat to select it
+                    <Text style={{ fontSize: 20, fontWeight: "800", color: "#111827" }}>Choose Your Seat</Text>
+                    <Text style={{ fontSize: 12, color: "#9ca3af", marginTop: 1 }}>
+                        Select from seats admin has sent you
                     </Text>
                 </View>
             </View>
 
             <ScrollView
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-                contentContainerStyle={{ padding: 16 }}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={INDIGO} />}
+                contentContainerStyle={{ padding: 20 }}
+                showsVerticalScrollIndicator={false}
             >
+                {/* Already has a seat */}
                 {student?.current_seat_id ? (
-                    <View className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                        <Text className="font-bold text-emerald-700">
+                    <View style={{
+                        backgroundColor: "#f0fdf4", borderRadius: 14,
+                        borderLeftWidth: 4, borderLeftColor: "#059669",
+                        padding: 16, marginBottom: 16,
+                    }}>
+                        <Text style={{ fontWeight: "700", color: "#065f46", fontSize: 14 }}>
                             You already have a seat assigned.
                         </Text>
-                        <Text className="mt-1 text-sm text-emerald-600">
+                        <Text style={{ color: "#047857", fontSize: 12, marginTop: 4 }}>
                             Contact the admin if you need to change it.
                         </Text>
                     </View>
                 ) : null}
 
                 {loading ? (
-                    <ActivityIndicator size="large" color="#4f46e5" className="mt-10" />
+                    <ActivityIndicator size="large" color={INDIGO} style={{ marginTop: 60 }} />
                 ) : error ? (
-                    <View className="rounded-xl border border-red-200 bg-red-50 p-4">
-                        <Text className="text-sm text-red-600">{error}</Text>
+                    <View style={{
+                        backgroundColor: "#fff5f5", borderRadius: 14,
+                        borderLeftWidth: 4, borderLeftColor: "#ef4444", padding: 16,
+                    }}>
+                        <Text style={{ color: "#ef4444", fontSize: 13 }}>{error}</Text>
                     </View>
                 ) : sortedSeats.length === 0 ? (
-                    <View className="items-center rounded-xl border border-gray-200 bg-white p-6">
-                        <Text className="text-center text-gray-500">
-                            No seats are currently available. Please contact the admin.
+                    /* ── Waiting for admin ── */
+                    <View style={{
+                        backgroundColor: "#fff", borderRadius: 20,
+                        padding: 32, alignItems: "center",
+                        shadowColor: INDIGO, shadowOpacity: 0.07, shadowRadius: 14,
+                        shadowOffset: { width: 0, height: 4 }, elevation: 3,
+                    }}>
+                        <Text style={{ fontSize: 48, marginBottom: 16 }}>⏳</Text>
+                        <Text style={{ fontSize: 18, fontWeight: "800", color: "#111827", marginBottom: 8, textAlign: "center" }}>
+                            Waiting for Admin
+                        </Text>
+                        <Text style={{ fontSize: 13, color: "#6b7280", textAlign: "center", lineHeight: 20 }}>
+                            The admin will send you a list of available seats once your payment is confirmed.
+                            {"\n\n"}Pull down to refresh.
                         </Text>
                     </View>
                 ) : (
                     <>
-                        <View className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
-                            <Text className="mb-1 text-sm font-semibold text-gray-600">
-                                {sortedSeats.length} seats available
-                            </Text>
-                            <View className="mt-1 flex-row items-center gap-3">
-                                <View className="h-7 w-7 items-center justify-center rounded-lg border-2 border-emerald-400 bg-emerald-100">
-                                    <Text className="text-[10px] font-bold text-emerald-700">A</Text>
-                                </View>
-                                <Text className="text-xs text-gray-500">
-                                    Available - tap to select
+                        {/* Info card */}
+                        <View style={{
+                            backgroundColor: "#fff", borderRadius: 14,
+                            padding: 16, marginBottom: 16,
+                            flexDirection: "row", alignItems: "center",
+                            shadowColor: INDIGO, shadowOpacity: 0.05, shadowRadius: 8, elevation: 1,
+                        }}>
+                            <View style={{
+                                width: 36, height: 36, borderRadius: 10,
+                                backgroundColor: "#eef2ff", alignItems: "center", justifyContent: "center",
+                                marginRight: 12,
+                            }}>
+                                <Text style={{ fontSize: 18 }}>🪑</Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 13, fontWeight: "700", color: "#111827" }}>
+                                    {sortedSeats.length} seat{sortedSeats.length !== 1 ? "s" : ""} available for you
+                                </Text>
+                                <Text style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
+                                    Tap a seat to select it · Cannot be changed without admin
                                 </Text>
                             </View>
                         </View>
 
-                        <View
-                            style={{ columnGap: seatGap, rowGap: seatGap }}
-                            className="flex-row flex-wrap"
-                        >
+                        {/* Seat grid */}
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: seatGap }}>
                             {sortedSeats.map((seat) => {
-                                const isBusy = selectingId === seat.id;
+                                const busy = selectingId === seat.id;
                                 return (
                                     <TouchableOpacity
                                         key={seat.id}
                                         onPress={() => handleSelectSeat(seat)}
                                         disabled={!!selectingId}
-                                        style={{ width: seatCardWidth, height: seatCardWidth }}
-                                        className={`items-center justify-center rounded-xl border-2 ${
-                                            isBusy
-                                                ? "border-indigo-300 bg-indigo-100"
-                                                : "border-emerald-400 bg-emerald-50"
-                                        }`}
+                                        activeOpacity={0.75}
+                                        style={{
+                                            width: seatSize, height: seatSize,
+                                            borderRadius: 14,
+                                            alignItems: "center", justifyContent: "center",
+                                            backgroundColor: busy ? "#eef2ff" : "#fff",
+                                            borderWidth: 2,
+                                            borderColor: busy ? INDIGO : "#34d399",
+                                            shadowColor: busy ? INDIGO : "#059669",
+                                            shadowOpacity: 0.15,
+                                            shadowRadius: 6,
+                                            elevation: 2,
+                                        }}
                                     >
-                                        {isBusy ? (
-                                            <ActivityIndicator size="small" color="#4f46e5" />
+                                        {busy ? (
+                                            <ActivityIndicator size="small" color={INDIGO} />
                                         ) : (
-                                            <Text className="text-[11px] font-bold text-emerald-700">
+                                            <Text style={{ fontSize: 12, fontWeight: "800", color: "#065f46" }}>
                                                 {seat.seat_number}
                                             </Text>
                                         )}
@@ -186,8 +226,8 @@ export default function SeatSelectScreen() {
                             })}
                         </View>
 
-                        <Text className="mt-4 text-center text-xs text-gray-400">
-                            Pull down to refresh seat availability
+                        <Text style={{ marginTop: 20, textAlign: "center", fontSize: 11, color: "#c4b5fd" }}>
+                            Pull down to refresh
                         </Text>
                     </>
                 )}

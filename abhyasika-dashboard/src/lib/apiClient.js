@@ -3,6 +3,8 @@ import { clearStoredSession, getStoredSession } from "./sessionStorage.js";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000/api";
 
+const CONNECTION_ERROR_MESSAGE = `Cannot reach the API server at ${API_BASE_URL}. Make sure the backend is running.`;
+
 function asArray(data, keys = []) {
   if (Array.isArray(data)) {
     return data;
@@ -41,16 +43,21 @@ async function request(path, { method = "GET", body, isForm = false, auth = true
     headers.Authorization = `Bearer ${session.access_token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers,
-    body:
-      body === undefined
-        ? undefined
-        : isForm
-        ? body
-        : JSON.stringify(body),
-  });
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers,
+      body:
+        body === undefined
+          ? undefined
+          : isForm
+          ? body
+          : JSON.stringify(body),
+    });
+  } catch {
+    throw new Error(CONNECTION_ERROR_MESSAGE);
+  }
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
