@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import Modal from "../common/Modal.jsx";
+import ThemeSelect from "../common/ThemeSelect.jsx";
 
 const PAYMENT_MODES = [
   { value: "upi", label: "UPI / Online" },
@@ -131,7 +132,7 @@ function PaymentModal({
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col text-sm font-medium text-slate-700">
             Student
-            <select
+            <ThemeSelect
               name="student_id"
               value={form.student_id}
               onChange={handleChange}
@@ -144,12 +145,12 @@ function PaymentModal({
                   {student.name}
                 </option>
               ))}
-            </select>
+            </ThemeSelect>
           </label>
 
           <label className="flex flex-col text-sm font-medium text-slate-700">
             Plan
-            <select
+            <ThemeSelect
               name="plan_id"
               value={form.plan_id}
               onChange={handleChange}
@@ -161,7 +162,7 @@ function PaymentModal({
                   {plan.name} — ₹{plan.price.toLocaleString("en-IN")}
                 </option>
               ))}
-            </select>
+            </ThemeSelect>
           </label>
 
           <label className="flex flex-col text-sm font-medium text-slate-700">
@@ -201,7 +202,7 @@ function PaymentModal({
 
           <label className="flex flex-col text-sm font-medium text-slate-700">
             Payment Mode
-            <select
+            <ThemeSelect
               name="payment_mode"
               value={form.payment_mode}
               onChange={handleChange}
@@ -212,11 +213,11 @@ function PaymentModal({
                   {mode.label}
                 </option>
               ))}
-            </select>
+            </ThemeSelect>
           </label>
           <label className="flex flex-col text-sm font-medium text-slate-700 sm:col-span-2">
             Collected By (Role)
-            <select
+            <ThemeSelect
               name="collected_role_id"
               value={form.collected_role_id}
               onChange={handleChange}
@@ -231,7 +232,7 @@ function PaymentModal({
                   {role.name}
                 </option>
               ))}
-            </select>
+            </ThemeSelect>
             {roles.length === 0 ? (
               <p className="mt-1 text-xs text-amber-600">
                 No roles found. Head to Settings → Role Directory to add one.
@@ -255,7 +256,7 @@ function PaymentModal({
               }))
             }
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-              form.includes_registration ? "bg-indigo-600" : "bg-slate-300"
+              form.includes_registration ? "toggle-gradient-on" : "bg-slate-300"
             }`}
             aria-pressed={form.includes_registration}
           >
@@ -289,7 +290,7 @@ function PaymentModal({
           </button>
           <button
             type="submit"
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
+            className="btn-gradient-primary rounded-xl px-4 py-2 text-sm font-semibold"
           >
             Log Payment
           </button>

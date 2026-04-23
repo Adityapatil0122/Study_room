@@ -21,29 +21,37 @@ import {
   BarChart3,
   Bell,
   CalendarClock,
+  Calculator,
+  ClipboardList,
   CreditCard,
   History,
+  Inbox,
   LayoutDashboard,
   LogOut,
   Menu,
+  PiggyBank,
   Plus,
   QrCode,
   RefreshCw,
   Search,
+  Send,
   Settings2,
   Users2,
   Wallet2,
   X,
+  XCircle,
 } from "lucide-react-native";
 import { createApiClient } from "../../lib/apiClient";
 import { useAuth } from "../../context/AuthContext";
 import { VIEW_DEFINITIONS } from "../../constants/views";
 
 const icons = {
+  ClipboardList,
   LayoutDashboard,
   Users2,
   Armchair,
   CreditCard,
+  Send,
   CalendarClock,
   BarChart3,
   QrCode,
@@ -64,6 +72,11 @@ const emptyData = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+const halfMonthDates = () => {
+  const start = new Date();
+  const end = new Date(start.getTime() + 14 * 86400000);
+  return { valid_from: start.toISOString().slice(0, 10), valid_until: end.toISOString().slice(0, 10) };
+};
 const money = (value) => `Rs. ${Number(value || 0).toLocaleString("en-IN")}`;
 const planName = (plans, id) => plans.find((plan) => plan.id === id)?.name || "No plan";
 const studentName = (students, id) => students.find((student) => student.id === id)?.name || "Unknown";
@@ -84,6 +97,24 @@ const sortSeatsByNumber = (items = []) =>
       { numeric: true, sensitivity: "base" }
     )
   );
+const isDiscountEligiblePlan = (plan) =>
+  plan && Number(plan.duration_days) >= 180;
+
+const EMPTY_REQUEST_FORM = {
+  type: "custom",
+  student_id: "",
+  plan_id: "",
+  amount: "",
+  valid_from: today(),
+  valid_until: today(),
+  notes: "",
+  deposit_amount: "",
+  discount_enabled: false,
+  discount_amount: "",
+  late_fee_enabled: false,
+  late_fee_amount: "",
+  allow_seat_selection: false,
+};
 
 function Card({ children, className = "", style }) {
   return <View style={style} className={`rounded-xl border border-slate-100 bg-white p-5 shadow-sm ${className}`}>{children}</View>;
@@ -184,7 +215,7 @@ function Sheet({ title, visible, onClose, children }) {
 export default function Dashboard() {
   const { width } = useWindowDimensions();
   const api = useMemo(() => createApiClient(), []);
-  const { admin, logout } = useAuth();
+  const { admin, logout, allowedViews, hasPermission, userType } = useAuth();
   const [active, setActive] = useState("dashboard");
   const [data, setData] = useState(emptyData);
   const [loading, setLoading] = useState(true);
@@ -204,6 +235,9 @@ export default function Dashboard() {
   const [seatForm, setSeatForm] = useState({ seat_number: "" });
   const [assignForm, setAssignForm] = useState({ seatId: "", studentId: "" });
   const [planForm, setPlanForm] = useState({ name: "", price: "", duration_days: "30" });
+  const [requestForm, setRequestForm] = useState(EMPTY_REQUEST_FORM);
+  const [requestBusy, setRequestBusy] = useState(false);
+  const [cancelRequestId, setCancelRequestId] = useState("");
   const hasSeenPendingRequestsRef = useRef(false);
   const previousPendingRequestIdsRef = useRef(new Set());
   const contentWidth = Math.max(width - 40, 280);
@@ -215,6 +249,21 @@ export default function Dashboard() {
   const seatGap = 12;
   const seatColumns = contentWidth < 360 ? 1 : contentWidth >= 960 ? 4 : contentWidth >= 640 ? 3 : 2;
   const seatCardWidth = (contentWidth - seatGap * (seatColumns - 1)) / seatColumns;
+  const allowedList = useMemo(
+    () =>
+      allowedViews && allowedViews.length
+        ? allowedViews
+        : VIEW_DEFINITIONS.filter((item) => item.id !== "coordinator").map((item) => item.id),
+    [allowedViews]
+  );
+  const visibleViews = useMemo(
+    () => VIEW_DEFINITIONS.filter((item) => allowedList.includes(item.id)),
+    [allowedList]
+  );
+  const canDo = useCallback(
+    (viewId, action = "view") => hasPermission(viewId, action),
+    [hasPermission]
+  );
 
   // Drawer slide animation
   const drawerAnim = useRef(new Animated.Value(0)).current;
@@ -225,6 +274,11 @@ export default function Dashboard() {
       useNativeDriver: true,
     }).start();
   }, [drawerOpen, drawerAnim]);
+
+  useEffect(() => {
+    if (allowedList.includes(active)) return;
+    setActive(allowedList[0] || "dashboard");
+  }, [active, allowedList]);
 
   // Sync spin animation
   const syncAnim = useRef(new Animated.Value(0)).current;
@@ -351,7 +405,13 @@ export default function Dashboard() {
     setRefreshing(false);
   };
 
-  const audit = { actor_id: admin?.id, actor_role: admin?.name || admin?.email || "Mobile admin" };
+  const audit = {
+    actor_id: admin?.id,
+    actor_role:
+      userType === "coordinator"
+        ? "Coordinator"
+        : admin?.name || admin?.email || "Mobile admin",
+  };
   const sortedSeats = useMemo(() => sortSeatsByNumber(data.seats), [data.seats]);
   const activeStudents = data.students.filter((student) => student.is_active);
   const availableSeats = sortedSeats.filter((seat) => seat.status !== "occupied");
@@ -386,6 +446,48 @@ export default function Dashboard() {
       .toLowerCase()
       .includes(search.toLowerCase())
   );
+  const selectedRequestPlan = data.plans.find((item) => item.id === requestForm.plan_id);
+  const selectedRequestStudent = data.students.find((item) => item.id === requestForm.student_id);
+  const canDiscountRequest = isDiscountEligiblePlan(selectedRequestPlan);
+  const canOfferSeatSelection =
+    selectedRequestStudent && !selectedRequestStudent.current_seat_id && availableSeats.length > 0;
+  const requestPlanAmount = Number(requestForm.amount) || 0;
+  const requestDeposit = Number(requestForm.deposit_amount) || 0;
+  const requestDiscount =
+    canDiscountRequest && requestForm.discount_enabled
+      ? Number(requestForm.discount_amount) || 0
+      : 0;
+  const requestLateFee = requestForm.late_fee_enabled
+    ? Number(requestForm.late_fee_amount) || 0
+    : 0;
+  const requestTotal = Math.max(
+    0,
+    requestPlanAmount + requestDeposit + requestLateFee - requestDiscount
+  );
+  const recentPayments = data.payments
+    .slice()
+    .sort((left, right) => new Date(right.payment_date || right.created_at || 0) - new Date(left.payment_date || left.created_at || 0))
+    .slice(0, 3);
+
+  useEffect(() => {
+    const firstStudentId = activeStudents[0]?.id || "";
+    const firstPlanId = data.plans[0]?.id || "";
+    setRequestForm((form) => {
+      if (
+        (form.student_id || !firstStudentId) &&
+        (form.plan_id || !firstPlanId)
+      ) {
+        return form;
+      }
+      const nextPlan = data.plans.find((item) => item.id === (form.plan_id || firstPlanId));
+      return {
+        ...form,
+        student_id: form.student_id || firstStudentId,
+        plan_id: form.plan_id || firstPlanId,
+        amount: form.amount || (nextPlan ? String(Number(nextPlan.price) || 0) : ""),
+      };
+    });
+  }, [activeStudents[0]?.id, data.plans]);
 
   const notifications = useMemo(() => {
     const approvalItems = pendingPayments.map((pending) => ({
@@ -449,7 +551,148 @@ export default function Dashboard() {
     }
   };
 
+  const setRequestField = (field, value) => {
+    setRequestForm((form) => {
+      const next = { ...form, [field]: value };
+
+      if (field === "student_id") {
+        const student = data.students.find((item) => item.id === value);
+        if (!student || student.current_seat_id) {
+          next.allow_seat_selection = false;
+        }
+      }
+
+      if (field === "plan_id") {
+        const plan = data.plans.find((item) => item.id === value);
+        const planPrice = plan ? Number(plan.price) || 0 : 0;
+        next.amount =
+          form.type === "half_month"
+            ? String(Math.round((planPrice * 15) / 30))
+            : plan
+            ? String(planPrice)
+            : "";
+        if (!isDiscountEligiblePlan(plan)) {
+          next.discount_enabled = false;
+          next.discount_amount = "";
+        }
+      }
+
+      if (field === "type") {
+        const plan = data.plans.find((item) => item.id === next.plan_id);
+        const planPrice = plan ? Number(plan.price) || 0 : 0;
+        if (value === "half_month") {
+          const dates = halfMonthDates();
+          return {
+            ...next,
+            ...dates,
+            amount: plan ? String(Math.round((planPrice * 15) / 30)) : "",
+          };
+        }
+        return {
+          ...next,
+          amount: plan ? String(planPrice) : "",
+        };
+      }
+
+      if (field === "discount_enabled" && !value) {
+        next.discount_amount = "";
+      }
+
+      if (field === "late_fee_enabled" && !value) {
+        next.late_fee_amount = "";
+      }
+
+      if (field === "allow_seat_selection" && !canOfferSeatSelection) {
+        next.allow_seat_selection = false;
+      }
+
+      return next;
+    });
+  };
+
+  const resetRequestForm = () => {
+    const plan = data.plans[0];
+    setRequestForm({
+      ...EMPTY_REQUEST_FORM,
+      student_id: activeStudents[0]?.id || "",
+      plan_id: plan?.id || "",
+      amount: plan ? String(Number(plan.price) || 0) : "",
+    });
+  };
+
+  const submitPaymentRequest = async () => {
+    if (!canDo("paymentRequests", "add")) {
+      Alert.alert("Permission required", "You do not have permission to send payment requests.");
+      return;
+    }
+    if (!requestForm.student_id || !requestForm.plan_id) {
+      Alert.alert("Missing details", "Select student and plan.");
+      return;
+    }
+    if (!requestForm.amount || !requestForm.valid_from || !requestForm.valid_until) {
+      Alert.alert("Missing details", "Amount and date range are required.");
+      return;
+    }
+
+    setRequestBusy(true);
+    try {
+      const request = await api.createScheduledPaymentRequest({
+        student_id: requestForm.student_id,
+        plan_id: requestForm.plan_id,
+        type: requestForm.type,
+        amount: Number(requestForm.amount),
+        valid_from: requestForm.valid_from,
+        valid_until: requestForm.valid_until,
+        notes: requestForm.notes || null,
+        deposit_amount: Number(requestForm.deposit_amount) || 0,
+        discount_enabled: canDiscountRequest ? requestForm.discount_enabled : false,
+        discount_amount:
+          canDiscountRequest && requestForm.discount_enabled
+            ? Number(requestForm.discount_amount) || 0
+            : 0,
+        late_fee_enabled: requestForm.late_fee_enabled,
+        late_fee_amount: requestForm.late_fee_enabled
+          ? Number(requestForm.late_fee_amount) || 0
+          : 0,
+        allow_seat_selection: requestForm.allow_seat_selection && canOfferSeatSelection,
+      });
+      setScheduledRequests((prev) => [request, ...prev]);
+      resetRequestForm();
+      setActive("paymentRequests");
+      Toast.show({
+        type: "success",
+        text1: "Payment request sent",
+        text2: "The student can now pay from their app.",
+      });
+    } catch (err) {
+      Alert.alert("Request failed", err.message || "Unable to send request.");
+    } finally {
+      setRequestBusy(false);
+    }
+  };
+
+  const cancelScheduledRequest = async (requestId) => {
+    if (!canDo("paymentRequests", "delete")) {
+      Alert.alert("Permission required", "You do not have permission to cancel requests.");
+      return;
+    }
+    setCancelRequestId(requestId);
+    try {
+      await api.cancelScheduledPaymentRequest(requestId);
+      setScheduledRequests((prev) => prev.filter((item) => item.id !== requestId));
+      Toast.show({ type: "info", text1: "Payment request cancelled" });
+    } catch (err) {
+      Alert.alert("Cancel failed", err.message || "Unable to cancel request.");
+    } finally {
+      setCancelRequestId("");
+    }
+  };
+
   const submitStudent = () => {
+    if (!canDo("students", "add")) {
+      Alert.alert("Permission required", "You do not have permission to add students.");
+      return;
+    }
     if (!studentForm.name.trim() || !studentForm.phone.trim()) {
       Alert.alert("Missing details", "Student name and phone are required.");
       return;
@@ -458,6 +701,10 @@ export default function Dashboard() {
   };
 
   const submitPayment = () => {
+    if (!canDo("payments", "add")) {
+      Alert.alert("Permission required", "You do not have permission to log payments.");
+      return;
+    }
     if (!paymentForm.student_id || !paymentForm.plan_id) {
       Alert.alert("Missing details", "Select student and plan.");
       return;
@@ -476,6 +723,10 @@ export default function Dashboard() {
   };
 
   const submitExpense = () => {
+    if (!canDo("expenses", "add")) {
+      Alert.alert("Permission required", "You do not have permission to add expenses.");
+      return;
+    }
     if (!expenseForm.title.trim() || !expenseForm.amount) {
       Alert.alert("Missing details", "Expense title and amount are required.");
       return;
@@ -484,6 +735,10 @@ export default function Dashboard() {
   };
 
   const submitSeat = () => {
+    if (!canDo("seats", "add")) {
+      Alert.alert("Permission required", "You do not have permission to add seats.");
+      return;
+    }
     if (!seatForm.seat_number.trim()) {
       Alert.alert("Missing details", "Seat number is required.");
       return;
@@ -492,6 +747,10 @@ export default function Dashboard() {
   };
 
   const submitPlan = () => {
+    if (!canDo("settings", "add")) {
+      Alert.alert("Permission required", "You do not have permission to add plans.");
+      return;
+    }
     if (!planForm.name.trim()) {
       Alert.alert("Missing details", "Plan name is required.");
       return;
@@ -500,6 +759,10 @@ export default function Dashboard() {
   };
 
   const submitAssign = () => {
+    if (!canDo("seats", "edit")) {
+      Alert.alert("Permission required", "You do not have permission to assign seats.");
+      return;
+    }
     if (!assignForm.seatId || !assignForm.studentId) {
       Alert.alert("Missing details", "Select seat and student.");
       return;
@@ -508,6 +771,10 @@ export default function Dashboard() {
   };
 
   const releaseSeat = (seat) => {
+    if (!canDo("seats", "edit")) {
+      Alert.alert("Permission required", "You do not have permission to release seats.");
+      return;
+    }
     Alert.alert("Release seat?", `Remove current student from ${seat.seat_number}?`, [
       { text: "Cancel", style: "cancel" },
       { text: "Release", style: "destructive", onPress: () => save(() => api.deallocateSeat({ seatId: seat.id, audit }), "seats") },
@@ -515,12 +782,20 @@ export default function Dashboard() {
   };
 
   const openPayment = (student) => {
+    if (!canDo("payments", "add")) {
+      Alert.alert("Permission required", "You do not have permission to log payments.");
+      return;
+    }
     const plan = data.plans.find((item) => item.id === student.current_plan_id) || data.plans[0];
     setPaymentForm({ student_id: student.id, plan_id: plan?.id || "", amount_paid: plan?.price?.toString() || "", valid_from: today(), payment_mode: "upi" });
     setModal("payment");
   };
 
   const openAssign = (seat) => {
+    if (!canDo("seats", "edit")) {
+      Alert.alert("Permission required", "You do not have permission to assign seats.");
+      return;
+    }
     setAssignForm({ seatId: seat.id, studentId: availableStudents[0]?.id || "" });
     setModal("assign");
   };
@@ -577,7 +852,7 @@ export default function Dashboard() {
 
   const dashboardView = (
     <>
-      <Header title="Welcome Admin" subtitle="Tap a card to jump to that section." />
+      <Header title={userType === "coordinator" ? "Welcome Coordinator" : "Welcome Admin"} subtitle="Tap a card to jump to that section." />
       <View style={{ columnGap: statGap }} className="flex-row flex-wrap">
         <Stat style={statCardStyle} compact={compactStats} label="Total Students" value={data.students.length} icon={Users2} tone="bg-blue-50" onPress={() => setActive("students")} />
         <Stat style={statCardStyle} compact={compactStats} label="Active Students" value={activeStudents.length} icon={Users2} tone="bg-emerald-50" onPress={() => setActive("students")} />
@@ -592,7 +867,12 @@ export default function Dashboard() {
 
   const studentsView = (
     <>
-      <Header title="Student Management" subtitle={`${data.students.length} total. KYC, plans, seats, and billing.`} action="New" onAction={() => setModal("student")} />
+      <Header
+        title="Student Management"
+        subtitle={`${data.students.length} total. KYC, plans, seats, and billing.`}
+        action={canDo("students", "add") ? "New" : undefined}
+        onAction={() => setModal("student")}
+      />
       <View className="mb-4 flex-row items-center rounded-xl border border-slate-200 bg-white px-4 py-3">
         <Search size={20} color="#94a3b8" />
         <TextInput value={search} onChangeText={setSearch} placeholder="Search students" placeholderTextColor="#94a3b8" className="ml-3 flex-1 text-lg text-slate-900" />
@@ -607,10 +887,16 @@ export default function Dashboard() {
             </View>
             <Text className={`self-start rounded-xl px-3 py-1.5 text-sm font-bold ${student.is_active ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"}`}>{student.is_active ? "ACTIVE" : "OFF"}</Text>
           </View>
-          <View className="mt-4 flex-row gap-3">
-            <TouchableOpacity onPress={() => openPayment(student)} className="rounded-xl bg-indigo-600 px-4 py-2.5"><Text className="text-base font-semibold text-white">Payment</Text></TouchableOpacity>
-            <TouchableOpacity onPress={() => save(() => api.toggleStudentActive(student.id, audit), "students")} className="rounded-xl border border-slate-200 px-4 py-2.5"><Text className="text-base font-semibold text-slate-700">Toggle</Text></TouchableOpacity>
-          </View>
+          {canDo("payments", "add") || canDo("students", "edit") ? (
+            <View className="mt-4 flex-row gap-3">
+              {canDo("payments", "add") ? (
+                <TouchableOpacity onPress={() => openPayment(student)} className="rounded-xl bg-indigo-600 px-4 py-2.5"><Text className="text-base font-semibold text-white">Payment</Text></TouchableOpacity>
+              ) : null}
+              {canDo("students", "edit") ? (
+                <TouchableOpacity onPress={() => save(() => api.toggleStudentActive(student.id, audit), "students")} className="rounded-xl border border-slate-200 px-4 py-2.5"><Text className="text-base font-semibold text-slate-700">Toggle</Text></TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
         </Card>
       ))}
     </>
@@ -618,7 +904,12 @@ export default function Dashboard() {
 
   const seatsView = (
     <>
-      <Header title="Seat Manager" subtitle={`${occupiedSeats.length} occupied, ${availableSeats.length} available.`} action="Add" onAction={() => setModal("seat")} />
+      <Header
+        title="Seat Manager"
+        subtitle={`${occupiedSeats.length} occupied, ${availableSeats.length} available.`}
+        action={canDo("seats", "add") ? "Add" : undefined}
+        onAction={() => setModal("seat")}
+      />
       <View style={{ columnGap: seatGap }} className="flex-row flex-wrap">
         {sortedSeats.map((seat) => {
           const occupied = seat.status === "occupied";
@@ -627,7 +918,9 @@ export default function Dashboard() {
               <Text className="text-2xl font-bold text-slate-950">{seat.seat_number}</Text>
               <Text className={`mt-1.5 text-sm font-bold uppercase ${occupied ? "text-indigo-600" : "text-emerald-600"}`}>{occupied ? "Occupied" : "Available"}</Text>
               <Text className="mt-2 text-sm text-slate-500" numberOfLines={2}>{occupied ? studentName(data.students, seat.current_student_id) : "Ready"}</Text>
-              <TouchableOpacity onPress={() => (occupied ? releaseSeat(seat) : openAssign(seat))} className={`mt-4 rounded-xl px-4 py-2.5 ${occupied ? "bg-rose-600" : "bg-indigo-600"}`}><Text className="text-center text-base font-semibold text-white">{occupied ? "Release" : "Assign"}</Text></TouchableOpacity>
+              {canDo("seats", "edit") ? (
+                <TouchableOpacity onPress={() => (occupied ? releaseSeat(seat) : openAssign(seat))} className={`mt-4 rounded-xl px-4 py-2.5 ${occupied ? "bg-rose-600" : "bg-indigo-600"}`}><Text className="text-center text-base font-semibold text-white">{occupied ? "Release" : "Assign"}</Text></TouchableOpacity>
+              ) : null}
             </Card>
           );
         })}
@@ -637,7 +930,12 @@ export default function Dashboard() {
 
   const paymentsView = (
     <>
-      <Header title="Payments" subtitle="Fees, validity, and collection modes." action="Log" onAction={() => setModal("payment")} />
+      <Header
+        title="Payments"
+        subtitle="Fees, validity, and collection modes."
+        action={canDo("payments", "add") ? "Log" : undefined}
+        onAction={() => setModal("payment")}
+      />
       {pendingPayments.length ? (
         <Card className="mb-4">
           <View className="flex-row items-center justify-between">
@@ -685,7 +983,23 @@ export default function Dashboard() {
               </View>
               <Text className={`text-lg font-bold ${days < 0 ? "text-rose-600" : "text-amber-600"}`}>{days < 0 ? `${Math.abs(days)}d late` : `${days}d left`}</Text>
             </View>
-            <TouchableOpacity onPress={() => openPayment(student)} className="mt-4 rounded-xl bg-indigo-600 px-4 py-2.5"><Text className="text-center text-base font-semibold text-white">Renew Now</Text></TouchableOpacity>
+            {canDo("payments", "add") || canDo("paymentRequests", "add") ? (
+              <TouchableOpacity
+                onPress={() => {
+                  if (canDo("payments", "add")) {
+                    openPayment(student);
+                    return;
+                  }
+                  setRequestField("student_id", student.id);
+                  setActive("paymentRequests");
+                }}
+                className="mt-4 rounded-xl bg-indigo-600 px-4 py-2.5"
+              >
+                <Text className="text-center text-base font-semibold text-white">
+                  {canDo("payments", "add") ? "Renew Now" : "Send Request"}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </Card>
         );
       })}
@@ -706,7 +1020,12 @@ export default function Dashboard() {
 
   const admissionsView = (
     <>
-      <Header title="Admissions" subtitle="Student intake and QR enrollment support." action="Add" onAction={() => setModal("student")} />
+      <Header
+        title="Admissions"
+        subtitle="Student intake and QR enrollment support."
+        action={canDo("students", "add") ? "Add" : undefined}
+        onAction={() => setModal("student")}
+      />
       <Card><QrCode size={34} color="#4f46e5" /><Text className="mt-3 text-xl font-bold text-slate-950">QR Enrollment</Text><Text className="mt-2 text-base leading-6 text-slate-500">Use the web dashboard for printable QR forms. Mobile can create admissions instantly.</Text></Card>
       <View style={{ columnGap: statGap }} className="mt-5 flex-row flex-wrap"><Stat style={statCardStyle} compact={compactStats} label="Admissions" value={data.students.length} icon={Users2} tone="bg-blue-50" /><Stat style={statCardStyle} compact={compactStats} label="Reg Pending" value={data.students.filter((s) => !s.registration_paid).length} icon={Bell} tone="bg-rose-50" /></View>
     </>
@@ -721,25 +1040,320 @@ export default function Dashboard() {
 
   const expensesView = (
     <>
-      <Header title="Expenses" subtitle="Operating expenses and payment modes." action="Add" onAction={() => setModal("expense")} />
+      <Header title="Expenses" subtitle="Operating expenses and payment modes." action={canDo("expenses", "add") ? "Add" : undefined} onAction={() => setModal("expense")} />
       {data.expenses.map((expense) => <Card key={expense.id} className="mb-4"><View className="flex-row justify-between gap-3"><View className="flex-1"><Text className="text-lg font-bold text-slate-950">{expense.title}</Text><Text className="mt-1.5 text-base text-slate-500">{expense.category || "misc"} | {expense.paid_via || "cash"}</Text><Text className="mt-1 text-sm text-slate-400">{expense.expense_date}</Text></View><Text className="text-xl font-bold text-rose-600">{money(expense.amount)}</Text></View></Card>)}
     </>
   );
 
   const settingsView = (
     <>
-      <Header title="Settings" subtitle="Plans, roles, and account actions." action="Plan" onAction={() => setModal("plan")} />
+      <Header title="Settings" subtitle="Plans, roles, and account actions." action={canDo("settings", "add") ? "Plan" : undefined} onAction={() => setModal("plan")} />
       <Card className="mb-4"><Text className="text-lg font-bold text-slate-950">Fee Plans</Text>{data.plans.map((plan) => <View key={plan.id} className="mt-4 flex-row justify-between border-b border-slate-100 pb-4"><View><Text className="text-base font-semibold text-slate-900">{plan.name}</Text><Text className="text-base text-slate-500">{plan.duration_days} days</Text></View><Text className="text-lg font-bold text-slate-950">{money(plan.price)}</Text></View>)}</Card>
       <Card className="mb-4"><Text className="text-lg font-bold text-slate-950">Roles</Text>{data.roles.length ? data.roles.map((role) => <Text key={role.id} className="mt-2.5 text-base font-semibold text-slate-700">{role.name}</Text>) : <Text className="mt-2.5 text-base text-slate-500">No custom roles.</Text>}</Card>
       <TouchableOpacity onPress={logout} className="flex-row items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3.5"><LogOut size={20} color="white" /><Text className="text-lg font-bold text-white">Log Out</Text></TouchableOpacity>
     </>
   );
 
+  const coordinatorView = (
+    <>
+      <Header
+        title="Daily Coordination"
+        subtitle="Send payment requests, monitor renewals, and verify student payments."
+        action={canDo("paymentRequests", "add") ? "Request" : undefined}
+        onAction={() => setActive("paymentRequests")}
+      />
+      <View style={{ columnGap: statGap }} className="flex-row flex-wrap">
+        <Stat style={statCardStyle} compact={compactStats} label="Active Students" value={activeStudents.length} icon={Users2} tone="bg-emerald-50" onPress={() => setActive("students")} />
+        <Stat style={statCardStyle} compact={compactStats} label="Renewals This Week" value={renewals.length} icon={CalendarClock} tone="bg-indigo-50" onPress={() => setActive("renewals")} />
+        <Stat style={statCardStyle} compact={compactStats} label="Pending QR" value={pendingPayments.length} icon={QrCode} tone="bg-amber-50" onPress={() => setActive("payments")} />
+        <Stat style={statCardStyle} compact={compactStats} label="Payment Requests" value={scheduledRequests.length} icon={Send} tone="bg-rose-50" onPress={() => setActive("paymentRequests")} />
+      </View>
+
+      <Card className="mb-4">
+        <View className="mb-4 flex-row items-center justify-between">
+          <View>
+            <Text className="text-lg font-bold text-slate-950">Coordinator Access</Text>
+            <Text className="mt-1 text-base text-slate-500">Limited workspace tools, no settings or expense access.</Text>
+          </View>
+          <Text className="rounded-full bg-indigo-50 px-3 py-1.5 text-sm font-bold text-indigo-700">Limited</Text>
+        </View>
+        {[
+          ["Send payment requests", "Create plan/payment requests for students."],
+          ["Track renewals", "View due students and send renewal reminders."],
+          ["Verify payments", "Review collections and pending QR payments."],
+          ["View admissions", "See registrations without admin settings access."],
+        ].map(([title, description]) => (
+          <View key={title} className="mb-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+            <Text className="text-base font-bold text-slate-800">{title}</Text>
+            <Text className="mt-1 text-sm text-slate-500">{description}</Text>
+          </View>
+        ))}
+      </Card>
+
+      <Card>
+        <View className="mb-4 flex-row items-center justify-between">
+          <Text className="text-lg font-bold text-slate-950">Recent Payments</Text>
+          <TouchableOpacity onPress={() => setActive("payments")}><Text className="text-base font-bold text-indigo-600">View all</Text></TouchableOpacity>
+        </View>
+        {recentPayments.length ? (
+          recentPayments.map((payment) => (
+            <View key={payment.id} className="mb-3 flex-row items-center justify-between rounded-xl border border-slate-100 px-4 py-3">
+              <View className="flex-1 pr-3">
+                <Text className="text-base font-bold text-slate-800">{payment.student_name || studentName(data.students, payment.student_id)}</Text>
+                <Text className="mt-1 text-sm text-slate-400">{(payment.payment_mode || "-").toUpperCase()}</Text>
+              </View>
+              <Text className="text-base font-bold text-emerald-600">{money(payment.amount_paid)}</Text>
+            </View>
+          ))
+        ) : (
+          <Text className="rounded-xl bg-slate-50 px-4 py-8 text-center text-base text-slate-500">No payments recorded yet.</Text>
+        )}
+      </Card>
+    </>
+  );
+
+  const paymentRequestsView = (
+    <>
+      <Header
+        title="Send Payment Request"
+        subtitle="Create a request for a student and track pending requests."
+      />
+
+      {canDo("paymentRequests", "add") ? (
+        <Card className="mb-5">
+          <View className="mb-5 flex-row items-center gap-3">
+            <View className="h-12 w-12 items-center justify-center rounded-xl bg-indigo-600">
+              <Send size={22} color="white" />
+            </View>
+            <View className="flex-1">
+              <Text className="text-lg font-bold text-slate-950">Request Details</Text>
+              <Text className="mt-1 text-sm text-slate-500">The student receives this instantly in their app.</Text>
+            </View>
+          </View>
+
+          {activeStudents.length ? (
+            <ChipPicker
+              label="Student"
+              items={activeStudents}
+              value={requestForm.student_id}
+              onChange={(value) => setRequestField("student_id", value)}
+              getLabel={(student) => `${student.name}${student.phone ? ` - ${student.phone}` : ""}`}
+              getValue={(student) => student.id}
+            />
+          ) : (
+            <Text className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-base text-rose-600">No active students available.</Text>
+          )}
+
+          {data.plans.length ? (
+            <ChipPicker
+              label="Plan"
+              items={data.plans}
+              value={requestForm.plan_id}
+              onChange={(value) => setRequestField("plan_id", value)}
+              getLabel={(plan) => `${plan.name} - ${money(plan.price)}`}
+              getValue={(plan) => plan.id}
+            />
+          ) : (
+            <Text className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-base text-rose-600">Create a plan before sending requests.</Text>
+          )}
+
+          <Text className="mb-2 text-sm font-semibold uppercase text-slate-500">Request Type</Text>
+          <View className="mb-4 flex-row gap-3">
+            {[
+              ["custom", "Custom", Settings2],
+              ["half_month", "15-Day", CalendarClock],
+            ].map(([value, label, Icon]) => {
+              const selected = requestForm.type === value;
+              return (
+                <TouchableOpacity
+                  key={value}
+                  onPress={() => setRequestField("type", value)}
+                  className={`flex-1 flex-row items-center justify-center gap-2 rounded-xl border px-3 py-3 ${selected ? "border-indigo-600 bg-indigo-600" : "border-slate-200 bg-white"}`}
+                >
+                  <Icon size={18} color={selected ? "white" : "#64748b"} />
+                  <Text className={`text-base font-bold ${selected ? "text-white" : "text-slate-600"}`}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View className="mb-4 flex-row gap-3">
+            <View className="flex-1">
+              <Input
+                label="Amount (Rs)"
+                value={requestForm.amount}
+                onChangeText={(value) => setRequestField("amount", value)}
+                placeholder="0"
+                keyboardType="numeric"
+              />
+            </View>
+            <View className="flex-1">
+              <Input
+                label="Deposit"
+                value={requestForm.deposit_amount}
+                onChangeText={(value) => setRequestField("deposit_amount", value)}
+                placeholder="0"
+                keyboardType="numeric"
+              />
+            </View>
+          </View>
+
+          <View className="mb-4 flex-row gap-3">
+            <View className="flex-1">
+              <Input
+                label="Valid From"
+                value={requestForm.valid_from}
+                onChangeText={(value) => setRequestField("valid_from", value)}
+                placeholder="YYYY-MM-DD"
+              />
+            </View>
+            <View className="flex-1">
+              <Input
+                label="Valid Until"
+                value={requestForm.valid_until}
+                onChangeText={(value) => setRequestField("valid_until", value)}
+                placeholder="YYYY-MM-DD"
+              />
+            </View>
+          </View>
+
+          <TouchableOpacity
+            onPress={() => setRequestField("late_fee_enabled", !requestForm.late_fee_enabled)}
+            className={`mb-3 flex-row items-center gap-3 rounded-xl border px-4 py-3 ${requestForm.late_fee_enabled ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"}`}
+          >
+            <Calculator size={19} color={requestForm.late_fee_enabled ? "#d97706" : "#64748b"} />
+            <View className="flex-1">
+              <Text className="text-base font-bold text-slate-800">Late Fee</Text>
+              <Text className="text-sm text-slate-500">Add an end-of-month fee.</Text>
+            </View>
+            <Text className="text-base font-bold text-slate-700">{requestForm.late_fee_enabled ? "On" : "Off"}</Text>
+          </TouchableOpacity>
+          {requestForm.late_fee_enabled ? (
+            <Input label="Late Fee Amount" value={requestForm.late_fee_amount} onChangeText={(value) => setRequestField("late_fee_amount", value)} placeholder="0" keyboardType="numeric" />
+          ) : null}
+
+          <TouchableOpacity
+            disabled={!canDiscountRequest}
+            onPress={() => setRequestField("discount_enabled", !requestForm.discount_enabled)}
+            className={`mb-3 flex-row items-center gap-3 rounded-xl border px-4 py-3 ${requestForm.discount_enabled ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-slate-50"} ${canDiscountRequest ? "" : "opacity-60"}`}
+          >
+            <PiggyBank size={19} color={requestForm.discount_enabled ? "#e11d48" : "#64748b"} />
+            <View className="flex-1">
+              <Text className="text-base font-bold text-slate-800">Discount</Text>
+              <Text className="text-sm text-slate-500">Available for plans of 180 days or more.</Text>
+            </View>
+            <Text className="text-base font-bold text-slate-700">{requestForm.discount_enabled ? "On" : "Off"}</Text>
+          </TouchableOpacity>
+          {requestForm.discount_enabled && canDiscountRequest ? (
+            <Input label="Discount Amount" value={requestForm.discount_amount} onChangeText={(value) => setRequestField("discount_amount", value)} placeholder="0" keyboardType="numeric" />
+          ) : null}
+
+          <TouchableOpacity
+            disabled={!canOfferSeatSelection}
+            onPress={() => setRequestField("allow_seat_selection", !requestForm.allow_seat_selection)}
+            className={`mb-4 flex-row items-center gap-3 rounded-xl border px-4 py-3 ${requestForm.allow_seat_selection ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"} ${canOfferSeatSelection ? "" : "opacity-60"}`}
+          >
+            <Armchair size={19} color={requestForm.allow_seat_selection ? "#059669" : "#64748b"} />
+            <View className="flex-1">
+              <Text className="text-base font-bold text-slate-800">Allow Seat Selection</Text>
+              <Text className="text-sm text-slate-500">
+                {selectedRequestStudent?.current_seat_id
+                  ? "Student already has a seat."
+                  : availableSeats.length
+                  ? `${availableSeats.length} seats available after payment.`
+                  : "No available seats right now."}
+              </Text>
+            </View>
+            <Text className="text-base font-bold text-slate-700">{requestForm.allow_seat_selection ? "On" : "Off"}</Text>
+          </TouchableOpacity>
+
+          <Input
+            label="Note to Student"
+            value={requestForm.notes}
+            onChangeText={(value) => setRequestField("notes", value)}
+            placeholder="e.g. Remaining days for April"
+          />
+
+          <View className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
+            <View className="flex-row items-center gap-2">
+              <Calculator size={18} color="#4f46e5" />
+              <Text className="text-sm font-bold uppercase text-indigo-700">Total to Collect</Text>
+            </View>
+            <Text className="mt-2 text-2xl font-bold text-indigo-700">{money(requestTotal)}</Text>
+            <Text className="mt-1 text-sm text-slate-500">
+              Plan {money(requestPlanAmount)}
+              {requestDeposit ? ` + Deposit ${money(requestDeposit)}` : ""}
+              {requestLateFee ? ` + Late fee ${money(requestLateFee)}` : ""}
+              {requestDiscount ? ` - Discount ${money(requestDiscount)}` : ""}
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            disabled={requestBusy || !activeStudents.length || !data.plans.length}
+            onPress={submitPaymentRequest}
+            className="flex-row items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3.5 disabled:opacity-60"
+          >
+            <Send size={20} color="white" />
+            <Text className="text-lg font-bold text-white">{requestBusy ? "Sending..." : "Send Request to Student"}</Text>
+          </TouchableOpacity>
+        </Card>
+      ) : null}
+
+      <Card>
+        <View className="mb-4 flex-row items-center gap-3">
+          <ClipboardList size={22} color="#4f46e5" />
+          <View className="flex-1">
+            <Text className="text-lg font-bold text-slate-950">Sent & Pending Requests</Text>
+            <Text className="text-sm text-slate-500">{scheduledRequests.length} pending request(s)</Text>
+          </View>
+        </View>
+        {scheduledRequests.length ? (
+          scheduledRequests.map((request) => (
+            <View key={request.id} className="mb-4 rounded-xl border border-slate-100 px-4 py-3">
+              <View className="flex-row justify-between gap-3">
+                <View className="flex-1">
+                  <Text className="text-base font-bold text-slate-950">{request.student_name || studentName(data.students, request.student_id)}</Text>
+                  <Text className="mt-1 text-sm text-slate-500">{request.type === "half_month" ? "15-Day" : "Custom"} | {request.plan_name || planName(data.plans, request.plan_id)}</Text>
+                  <Text className="mt-1 text-sm text-slate-400">{request.valid_from} to {request.valid_until}</Text>
+                </View>
+                <Text className="text-lg font-bold text-indigo-700">{money(request.total_amount ?? request.amount)}</Text>
+              </View>
+              <View className="mt-3 flex-row flex-wrap gap-2">
+                {Number(request.deposit_amount) > 0 ? <Text className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">Deposit {money(request.deposit_amount)}</Text> : null}
+                {request.late_fee_enabled && Number(request.late_fee_amount) > 0 ? <Text className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">Late {money(request.late_fee_amount)}</Text> : null}
+                {request.discount_enabled && Number(request.discount_amount) > 0 ? <Text className="rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">Discount {money(request.discount_amount)}</Text> : null}
+                {request.allow_seat_selection ? <Text className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">Seat choice</Text> : null}
+              </View>
+              {request.notes ? <Text className="mt-3 text-sm text-slate-500">{request.notes}</Text> : null}
+              {canDo("paymentRequests", "delete") ? (
+                <TouchableOpacity
+                  disabled={cancelRequestId === request.id}
+                  onPress={() => cancelScheduledRequest(request.id)}
+                  className="mt-4 flex-row items-center justify-center gap-2 rounded-xl border border-rose-200 px-4 py-2.5"
+                >
+                  <XCircle size={18} color="#e11d48" />
+                  <Text className="text-base font-bold text-rose-600">{cancelRequestId === request.id ? "Cancelling..." : "Cancel Request"}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ))
+        ) : (
+          <View className="items-center rounded-xl bg-slate-50 px-4 py-10">
+            <Inbox size={34} color="#94a3b8" />
+            <Text className="mt-3 text-base text-slate-500">No pending scheduled requests.</Text>
+          </View>
+        )}
+      </Card>
+    </>
+  );
+
   const views = {
+    coordinator: coordinatorView,
     dashboard: dashboardView,
     students: studentsView,
     seats: seatsView,
     payments: paymentsView,
+    paymentRequests: paymentRequestsView,
     renewals: renewalsView,
     reports: reportsView,
     admissions: admissionsView,
@@ -790,7 +1404,7 @@ export default function Dashboard() {
             </View>
           </View>
           <ScrollView className="flex-1 px-3 pt-4" showsVerticalScrollIndicator={false}>
-            {VIEW_DEFINITIONS.map((item) => {
+            {visibleViews.map((item) => {
               const Icon = icons[item.icon] || LayoutDashboard;
               const selected = active === item.id;
               return (
@@ -826,7 +1440,7 @@ export default function Dashboard() {
               <Menu size={24} color="#334155" />
             </TouchableOpacity>
             <View>
-              <Text className="text-xl font-bold text-slate-950">{VIEW_DEFINITIONS.find(v => v.id === active)?.label || "Dashboard"}</Text>
+              <Text className="text-xl font-bold text-slate-950">{visibleViews.find(v => v.id === active)?.label || "Dashboard"}</Text>
               <Text className="text-sm text-slate-500">{admin?.email || "Mobile admin"}</Text>
             </View>
           </View>
@@ -860,7 +1474,7 @@ export default function Dashboard() {
         {error ? <Text className="mt-3 rounded-xl bg-rose-50 px-4 py-2.5 text-base text-rose-600">{error}</Text> : null}
       </View>
 
-      <ScrollView className="flex-1 px-5 pt-6" contentContainerStyle={{ paddingBottom: 40 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>{views[active]}</ScrollView>
+      <ScrollView className="flex-1 px-5 pt-6" contentContainerStyle={{ paddingBottom: 40 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>{views[active] || views[visibleViews[0]?.id] || dashboardView}</ScrollView>
 
       <Sheet title="Notifications" visible={notificationsOpen} onClose={() => setNotificationsOpen(false)}>
         {notifications.length === 0 ? (

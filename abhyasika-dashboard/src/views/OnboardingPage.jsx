@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import ThemeSelect from "../components/common/ThemeSelect.jsx";
 import LucideIcon from "../components/icons/LucideIcon.jsx";
 import { createApiClient } from "../lib/apiClient.js";
 
@@ -265,7 +266,7 @@ function OnboardingPage() {
               </label>
               <label className="flex flex-col text-sm font-medium text-slate-700">
                 Gender
-                <select
+                <ThemeSelect
                   name="gender"
                   value={form.gender}
                   onChange={handleChange}
@@ -275,7 +276,7 @@ function OnboardingPage() {
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
                   <option value="Other">Other</option>
-                </select>
+                </ThemeSelect>
               </label>
             </div>
 
@@ -363,7 +364,7 @@ function OnboardingPage() {
                   type="button"
                   onClick={() => handleToggle("attachPhoto")}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                    form.attachPhoto ? "bg-indigo-600" : "bg-slate-200"
+                    form.attachPhoto ? "toggle-gradient-on" : "bg-slate-200"
                   }`}
                 >
                   <span
@@ -401,7 +402,7 @@ function OnboardingPage() {
 
             <label className="flex flex-col text-sm font-medium text-slate-700">
               Preferred Shift
-              <select
+              <ThemeSelect
                 name="preferredShift"
                 value={form.preferredShift}
                 onChange={handleChange}
@@ -412,13 +413,13 @@ function OnboardingPage() {
                     {shift}
                   </option>
                 ))}
-              </select>
+              </ThemeSelect>
             </label>
 
             <div className="grid gap-4 md:grid-cols-2">
               <label className="flex flex-col text-sm font-medium text-slate-700">
                 Plan Type
-                <select
+                <ThemeSelect
                   name="planType"
                   value={form.planType}
                   onChange={handleChange}
@@ -429,12 +430,12 @@ function OnboardingPage() {
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </ThemeSelect>
               </label>
 
               <label className="flex flex-col text-sm font-medium text-slate-700">
                 Billing Cycle
-                <select
+                <ThemeSelect
                   name="billingCycle"
                   value={form.billingCycle}
                   onChange={handleChange}
@@ -445,7 +446,7 @@ function OnboardingPage() {
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </ThemeSelect>
               </label>
             </div>
 
@@ -471,7 +472,7 @@ function OnboardingPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-60"
+              className="btn-gradient-primary inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-semibold"
             >
               {submitting ? (
                 <>

@@ -45,6 +45,62 @@ async function addColumnIfMissing(tableName, columnName, definition) {
   }
 }
 
+const COORDINATOR_ROLE_PERMISSIONS = {
+  coordinator: { view: true, add: false, edit: false, delete: false },
+  dashboard: { view: false, add: false, edit: false, delete: false },
+  students: { view: true, add: false, edit: false, delete: false },
+  seats: { view: false, add: false, edit: false, delete: false },
+  payments: { view: true, add: false, edit: false, delete: false },
+  paymentRequests: { view: true, add: true, edit: false, delete: false },
+  renewals: { view: true, add: true, edit: false, delete: false },
+  reports: { view: false, add: false, edit: false, delete: false },
+  admissions: { view: true, add: false, edit: false, delete: false },
+  history: { view: false, add: false, edit: false, delete: false },
+  expenses: { view: false, add: false, edit: false, delete: false },
+  settings: { view: false, add: false, edit: false, delete: false },
+};
+
+async function ensureCoordinatorRole(ownerId) {
+  const existing = await queryOne(
+    `
+      SELECT id
+      FROM admin_roles
+      WHERE created_by = ? AND LOWER(name) = 'coordinator'
+      LIMIT 1
+    `,
+    [ownerId]
+  );
+
+  const permissions = JSON.stringify(COORDINATOR_ROLE_PERMISSIONS);
+  const description =
+    "Limited access for payment requests, renewals, admissions, and payment verification.";
+
+  if (existing) {
+    await query(
+      `
+        UPDATE admin_roles
+        SET description = ?, permissions = ?
+        WHERE id = ?
+      `,
+      [description, permissions, existing.id]
+    );
+    return;
+  }
+
+  await query(
+    `
+      INSERT INTO admin_roles (
+        id,
+        created_by,
+        name,
+        description,
+        permissions
+      ) VALUES (?, ?, 'Coordinator', ?, ?)
+    `,
+    [randomUUID(), ownerId, description, permissions]
+  );
+}
+
 async function ensureTables() {
   await query(`
     CREATE TABLE IF NOT EXISTS admins (
@@ -349,6 +405,21 @@ async function ensureTables() {
     "total_amount",
     "NUMERIC(10,2) NULL"
   );
+  await addColumnIfMissing(
+    "scheduled_payment_requests",
+    "late_fee_enabled",
+    "TINYINT(1) NOT NULL DEFAULT 0"
+  );
+  await addColumnIfMissing(
+    "scheduled_payment_requests",
+    "late_fee_amount",
+    "NUMERIC(10,2) NOT NULL DEFAULT 0"
+  );
+  await addColumnIfMissing(
+    "scheduled_payment_requests",
+    "allow_seat_selection",
+    "TINYINT(1) NOT NULL DEFAULT 0"
+  );
 
   // Admin notifications (new-registration, etc.)
   await query(`
@@ -456,6 +527,8 @@ async function ensureSeedData() {
     // No workspace owner yet (first boot before admin is seeded) - skip.
     return;
   }
+
+  await ensureCoordinatorRole(owner.id);
 
   const existingPlan = await queryOne(
     "SELECT id FROM plans WHERE workspace_owner_id = ? LIMIT 1",

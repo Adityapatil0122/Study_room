@@ -1,5 +1,10 @@
 export const VIEW_DEFINITIONS = [
     {
+        id: "coordinator",
+        label: "Coordinator",
+        icon: "ClipboardList",
+    },
+    {
         id: "dashboard",
         label: "Dashboard",
         icon: "LayoutDashboard",
@@ -18,6 +23,11 @@ export const VIEW_DEFINITIONS = [
         id: "payments",
         label: "Payments",
         icon: "CreditCard",
+    },
+    {
+        id: "paymentRequests",
+        label: "Send Payment Request",
+        icon: "Send",
     },
     {
         id: "renewals",
@@ -59,7 +69,9 @@ export const VIEW_LABELS = VIEW_DEFINITIONS.reduce(
     {}
 );
 
-export const ALL_VIEW_IDS = VIEW_DEFINITIONS.map((view) => view.id);
+export const ALL_VIEW_IDS = VIEW_DEFINITIONS
+    .filter((view) => view.id !== "coordinator")
+    .map((view) => view.id);
 
 export const VIEW_ACTIONS = ["view", "add", "edit", "delete"];
 
@@ -126,3 +138,20 @@ export const DEFAULT_FULL_PERMISSIONS = buildPermissionTemplate({
     edit: true,
     delete: true,
 });
+
+export const COORDINATOR_PERMISSIONS = buildPermissionTemplate({
+    view: false,
+    add: false,
+    edit: false,
+    delete: false,
+    coordinator: { view: true },
+    students: { view: true },
+    payments: { view: true },
+    paymentRequests: { view: true, add: true },
+    renewals: { view: true, add: true },
+    admissions: { view: true },
+});
+
+export const COORDINATOR_VIEW_IDS = Object.entries(COORDINATOR_PERMISSIONS)
+    .filter(([, permissions]) => permissions.view)
+    .map(([viewId]) => viewId);

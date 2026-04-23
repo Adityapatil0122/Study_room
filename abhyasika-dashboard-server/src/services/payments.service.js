@@ -348,20 +348,42 @@ export async function createScheduledPaymentRequest(workspaceOwnerId, payload, a
   if (discountEnabled && canDiscount) {
     discount = Math.max(0, Number(payload.discount_amount ?? 0) || 0);
   }
+  const lateFeeEnabled = Boolean(payload.late_fee_enabled);
+  const lateFee = lateFeeEnabled
+    ? Math.max(0, Number(payload.late_fee_amount ?? 0) || 0)
+    : 0;
+  const allowSeatSelection = Boolean(payload.allow_seat_selection);
+  if (allowSeatSelection) {
+    if (student.current_seat_id) {
+      throw new AppError("Seat selection can only be sent to students without an assigned seat", 400);
+    }
+    const availableSeat = await queryOne(
+      `SELECT id
+       FROM seats
+       WHERE workspace_owner_id = ? AND status = 'available'
+       LIMIT 1`,
+      [workspaceOwnerId]
+    );
+    if (!availableSeat) {
+      throw new AppError("No available seats to offer", 400);
+    }
+  }
 
-  const total = Math.max(0, amount + deposit - discount);
+  const total = Math.max(0, amount + deposit + lateFee - discount);
 
   const id = randomUUID();
   await query(
     `INSERT INTO scheduled_payment_requests
        (id, workspace_owner_id, student_id, plan_id, type, amount,
         valid_from, valid_until, notes, status,
-        deposit_amount, discount_enabled, discount_amount, total_amount)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?, ?)`,
+        deposit_amount, discount_enabled, discount_amount, total_amount,
+        late_fee_enabled, late_fee_amount, allow_seat_selection)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, workspaceOwnerId, student_id, plan_id, type, amount,
       valid_from, valid_until, notes ?? null,
       deposit, discountEnabled && canDiscount ? 1 : 0, discount, total,
+      lateFeeEnabled ? 1 : 0, lateFee, allowSeatSelection ? 1 : 0,
     ]
   );
 
@@ -375,7 +397,11 @@ export async function createScheduledPaymentRequest(workspaceOwnerId, payload, a
       actorRole: audit?.actor_role,
       metadata: {
         student_id, plan_id, type, amount, valid_from, valid_until,
-        deposit_amount: deposit, discount_amount: discount, total_amount: total,
+        deposit_amount: deposit,
+        discount_amount: discount,
+        late_fee_amount: lateFee,
+        allow_seat_selection: allowSeatSelection,
+        total_amount: total,
       },
     }
   );
@@ -386,6 +412,9 @@ export async function createScheduledPaymentRequest(workspaceOwnerId, payload, a
     deposit_amount: deposit,
     discount_enabled: discountEnabled && canDiscount,
     discount_amount: discount,
+    late_fee_enabled: lateFeeEnabled,
+    late_fee_amount: lateFee,
+    allow_seat_selection: allowSeatSelection,
     total_amount: total,
     student_name: student.name, student_phone: student.phone, plan_name: plan.name,
   };
@@ -420,10 +449,16 @@ export async function listScheduledPaymentRequests(workspaceOwnerId, { status } 
     deposit_amount: Number(r.deposit_amount ?? 0),
     discount_enabled: toBoolean(r.discount_enabled),
     discount_amount: Number(r.discount_amount ?? 0),
+    late_fee_enabled: toBoolean(r.late_fee_enabled),
+    late_fee_amount: Number(r.late_fee_amount ?? 0),
+    allow_seat_selection: toBoolean(r.allow_seat_selection),
     total_amount:
       r.total_amount !== null && r.total_amount !== undefined
         ? Number(r.total_amount)
-        : Number(r.amount) + Number(r.deposit_amount ?? 0) - Number(r.discount_amount ?? 0),
+        : Number(r.amount) +
+          Number(r.deposit_amount ?? 0) +
+          Number(r.late_fee_amount ?? 0) -
+          Number(r.discount_amount ?? 0),
     valid_from: toDateString(r.valid_from),
     valid_until: toDateString(r.valid_until),
   }));
@@ -459,13 +494,14 @@ export async function fulfillScheduledPaymentRequest(workspaceOwnerId, requestId
   if (!req) throw new AppError("Scheduled request not found", 404);
   if (req.status !== "sent") throw new AppError(`Request is already ${req.status}`, 400);
 
-  // Charge the full total (plan amount + deposit − discount) if present, otherwise amount.
+  // Charge the full total if present; otherwise use amount + deposit + late fee - discount.
   const chargedAmount =
     req.total_amount !== null && req.total_amount !== undefined
       ? Number(req.total_amount)
       : Number(req.amount) +
         Number(req.deposit_amount ?? 0) -
-        Number(req.discount_amount ?? 0);
+        Number(req.discount_amount ?? 0) +
+        Number(req.late_fee_amount ?? 0);
 
   const { payment, student } = await createPayment(
     workspaceOwnerId,
@@ -479,8 +515,9 @@ export async function fulfillScheduledPaymentRequest(workspaceOwnerId, requestId
       notes:
         req.notes ??
         `Scheduled ${req.type} payment` +
-          (Number(req.deposit_amount) ? ` (incl. ₹${Number(req.deposit_amount)} deposit)` : "") +
-          (Number(req.discount_amount) ? ` (−₹${Number(req.discount_amount)} discount)` : ""),
+          (Number(req.deposit_amount) ? ` (incl. Rs ${Number(req.deposit_amount)} deposit)` : "") +
+          (Number(req.discount_amount) ? ` (-Rs ${Number(req.discount_amount)} discount)` : "") +
+          (Number(req.late_fee_amount) ? ` (incl. Rs ${Number(req.late_fee_amount)} late fee)` : ""),
     },
     audit
   );

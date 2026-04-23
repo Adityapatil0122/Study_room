@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Modal from "../common/Modal.jsx";
+import ThemeSelect from "../common/ThemeSelect.jsx";
 import LucideIcon from "../icons/LucideIcon.jsx";
 import { createApiClient } from "../../lib/apiClient.js";
 
@@ -22,7 +23,7 @@ const ToggleSwitch = ({ checked, onToggle, disabled = false }) => (
     aria-checked={checked}
     onClick={() => (disabled ? null : onToggle(!checked))}
     className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-      checked ? "bg-indigo-600" : "bg-slate-300"
+      checked ? "toggle-gradient-on" : "bg-slate-300"
     } ${disabled ? "cursor-not-allowed opacity-60" : "focus:outline-none focus:ring-2 focus:ring-indigo-300"}`}
     disabled={disabled}
   >
@@ -264,7 +265,7 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
           </label>
           <label className="flex flex-col text-sm font-medium text-slate-700">
             Gender
-            <select
+            <ThemeSelect
               name="gender"
               value={form.gender}
               onChange={handleChange}
@@ -277,7 +278,7 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
                   {option}
                 </option>
               ))}
-            </select>
+            </ThemeSelect>
           </label>
           <label className="flex flex-col text-sm font-medium text-slate-700 md:col-span-2">
             Address
@@ -319,7 +320,7 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
           <div className="grid gap-4 md:grid-cols-2">
             <label className="flex flex-col text-sm font-medium text-slate-700">
               ID Proof Type
-              <select
+              <ThemeSelect
                 name="id_proof_type"
                 value={form.id_proof_type}
                 onChange={handleChange}
@@ -330,7 +331,7 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </ThemeSelect>
             </label>
             <label className="flex flex-col text-sm font-medium text-slate-700">
               Upload ID Proof (JPG/PNG/PDF)
@@ -393,7 +394,7 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
           <div className="mt-3 grid gap-4 md:grid-cols-2">
             <label className="flex flex-col text-sm font-medium text-slate-700">
               Plan Type
-              <select
+              <ThemeSelect
                 name="fee_plan_type"
                 value={form.fee_plan_type}
                 onChange={handleChange}
@@ -404,7 +405,7 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </ThemeSelect>
             </label>
             {form.fee_plan_type === "limited" ? (
               <label className="flex flex-col text-sm font-medium text-slate-700">
@@ -466,7 +467,7 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
             <div className="mt-3 grid gap-3 md:grid-cols-2">
               <label className="flex flex-col text-sm font-medium text-slate-700">
                 Plan
-                <select
+                <ThemeSelect
                   name="plan_id"
                   value={form.initialPayment.plan_id}
                   onChange={(event) => {
@@ -504,7 +505,7 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
                       {plan.name} — ₹{plan.price?.toLocaleString("en-IN")}
                     </option>
                   ))}
-                </select>
+                </ThemeSelect>
               </label>
               <label className="flex flex-col text-sm font-medium text-slate-700">
                 Amount (₹)
@@ -527,7 +528,7 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
               </label>
               <label className="flex flex-col text-sm font-medium text-slate-700">
                 Paid Via
-                <select
+                <ThemeSelect
                   name="payment_mode"
                   value={form.initialPayment.payment_mode}
                   onChange={(event) =>
@@ -543,7 +544,7 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
                 >
                   <option value="upi">UPI / Online</option>
                   <option value="cash">Cash</option>
-                </select>
+                </ThemeSelect>
               </label>
                 <label className="flex flex-col text-sm font-medium text-slate-700">
                   Valid From
@@ -606,7 +607,7 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
             <>
               <label className="flex flex-col text-sm font-medium text-slate-700">
                 Current Plan
-                <select
+                <ThemeSelect
                   name="current_plan_id"
                   value={form.current_plan_id || ""}
                   onChange={handleChange}
@@ -618,7 +619,7 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
                       {plan.name}
                     </option>
                   ))}
-                </select>
+                </ThemeSelect>
               </label>
 
               <label className="flex flex-col text-sm font-medium text-slate-700">
@@ -726,7 +727,7 @@ function StudentModal({ open, onClose, onSubmit, student, plans, seats }) {
             </button>
             <button
               type="submit"
-              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
+              className="btn-gradient-primary rounded-xl px-4 py-2 text-sm font-semibold"
             >
               {isEdit ? "Save Changes" : "Create Student"}
             </button>

@@ -467,5 +467,13 @@ export function createApiClient() {
         ["requests", "scheduled"]
       );
     },
+
+    async createScheduledPaymentRequest(payload) {
+      return request("/payments/scheduled", { method: "POST", body: payload });
+    },
+
+    async cancelScheduledPaymentRequest(id) {
+      return request(`/payments/scheduled/${id}`, { method: "DELETE" });
+    },
   };
 }

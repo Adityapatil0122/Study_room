@@ -10,6 +10,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.553.0",
     "qrcode": "^1.5.4",

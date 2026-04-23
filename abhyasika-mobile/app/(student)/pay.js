@@ -57,7 +57,8 @@ export default function PayScreen() {
       : Math.max(0,
           Number(req.amount ?? 0) +
           Number(req.deposit_amount ?? 0) -
-          (req.discount_enabled ? Number(req.discount_amount ?? 0) : 0)
+          (req.discount_enabled ? Number(req.discount_amount ?? 0) : 0) +
+          (req.late_fee_enabled ? Number(req.late_fee_amount ?? 0) : 0)
         )
     : 0;
 
@@ -108,7 +109,10 @@ export default function PayScreen() {
         pathname: "/(student)/receipt",
         params: {
           payment:       JSON.stringify(receiptPayment),
-          redirectAfter: !student?.current_seat_id ? "/(student)/seat-select" : "/(student)/home",
+          redirectAfter:
+            req.allow_seat_selection && !student?.current_seat_id
+              ? "/(student)/seat-select"
+              : "/(student)/home",
         },
       });
     } catch (err) {
@@ -417,6 +421,14 @@ export default function PayScreen() {
                     </Text>
                   </View>
                 )}
+                {req.late_fee_enabled && Number(req.late_fee_amount) > 0 && (
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+                    <Text style={{ color: "#d97706", fontSize: 13 }}>+ Late Fee</Text>
+                    <Text style={{ color: "#d97706", fontWeight: "600", fontSize: 13 }}>
+                      ₹{Number(req.late_fee_amount).toLocaleString("en-IN")}
+                    </Text>
+                  </View>
+                )}
                 <View style={{ borderTopWidth: 1, borderColor: "#e5e7eb", paddingTop: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                   <Text style={{ color: "#111827", fontWeight: "700", fontSize: 15 }}>Total Payable</Text>
                   <Text style={{ color: "#4f46e5", fontWeight: "900", fontSize: 22 }}>
@@ -428,6 +440,11 @@ export default function PayScreen() {
               {req.notes ? (
                 <Text style={{ color: "#818cf8", fontSize: 12, fontStyle: "italic", marginTop: 8 }}>
                   "{req.notes}"
+                </Text>
+              ) : null}
+              {req.allow_seat_selection && !student?.current_seat_id ? (
+                <Text style={{ color: "#059669", fontSize: 12, fontWeight: "700", marginTop: 8 }}>
+                  After payment, you can choose any currently available seat.
                 </Text>
               ) : null}
             </View>

@@ -1,13 +1,38 @@
-import React from "react";
-import LucideIcon from "../icons/LucideIcon.jsx";
+import React, { useState, useEffect } from "react";
+import PhosphorIcon from "../icons/PhosphorIcon.jsx";
 import { VIEW_DEFINITIONS } from "../../constants/views.js";
+
+const PHOSPHOR_ICONS = {
+  coordinator: "ClipboardText",
+  dashboard: "ChartBar",
+  students: "Users",
+  seats: "Armchair",
+  payments: "CreditCard",
+  paymentRequests: "PaperPlaneTilt",
+  renewals: "CalendarCheck",
+  reports: "ChartPie",
+  admissions: "QrCode",
+  history: "ClockCounterClockwise",
+  expenses: "Wallet",
+  settings: "GearSix",
+};
 
 function Sidebar({
   activeView,
   onNavigate,
   branding = { logoUrl: "/images/abhyasika-logo.png" },
   allowedViews = [],
+  onLogout,
+  sidebarOpen,
 }) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  // When hamburger toggles sidebarOpen, expand the sidebar
+  useEffect(() => {
+    if (sidebarOpen) setCollapsed(false);
+    else setCollapsed(true);
+  }, [sidebarOpen]);
+
   const allowedList =
     allowedViews && allowedViews.length
       ? allowedViews
@@ -16,88 +41,104 @@ function Sidebar({
     allowedList.includes(item.id)
   );
   const logoSrc = branding?.logoUrl || "/images/abhyasika-logo.png";
+
   return (
-    <aside className="relative hidden w-64 flex-none bg-white/70 px-5 py-6 shadow-2xl shadow-indigo-100/70 backdrop-blur-2xl transition-colors duration-300 dark:bg-gray-900/80 dark:text-slate-100 dark:shadow-black/50 lg:flex">
-      <div className="pointer-events-none absolute inset-0 -z-10 rounded-3xl bg-gradient-to-b from-indigo-100/70 via-white/70 to-white dark:from-gray-900/80 dark:via-gray-900/60 dark:to-gray-950/80" />
-      <div className="flex h-full flex-col">
-        <div className="flex items-center gap-3 px-1 pb-4 border-b border-slate-100 dark:border-gray-700 mb-2">
-          <div className="h-12 w-12 flex-shrink-0 rounded-2xl bg-white shadow-md ring-2 ring-indigo-100 flex items-center justify-center overflow-hidden">
+    <aside
+      className={`
+        relative hidden flex-col bg-white border-r border-slate-100 flex-shrink-0
+        transition-all duration-300 ease-in-out
+        lg:flex
+        ${collapsed ? "w-14" : "w-56"}
+      `}
+      style={{ height: "100vh", position: "sticky", top: 0 }}
+    >
+      <div className="flex h-full flex-col overflow-hidden">
+
+        {/* Logo / Branding */}
+        <div className={`flex items-center border-b border-slate-100 py-3 ${collapsed ? "justify-center px-2" : "gap-2 px-3"}`}>
+          <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-xl bg-white flex items-center justify-center">
             <img
               src={logoSrc}
-              alt="Aradhya Abhyasika"
-              className="h-12 w-12 object-contain"
-              onError={(e) => { e.currentTarget.src = "/images/abhyasika-logo.png"; }}
+              alt="Logo"
+              className="h-10 w-10 object-contain"
+              onError={(e) => { e.currentTarget.style.display = "none"; }}
             />
           </div>
-          <div className="min-w-0">
-            <h1 className="text-sm font-bold leading-tight text-slate-800 dark:text-white truncate">
+          <div className={`min-w-0 overflow-hidden transition-all duration-300 ease-in-out ${collapsed ? "w-0 opacity-0" : "flex-1 opacity-100"}`}>
+            <h1 className="text-xs font-bold leading-tight text-slate-700 truncate whitespace-nowrap">
               Aradhya Abhyasika
             </h1>
-            <p className="text-[10px] uppercase tracking-widest text-indigo-400 mt-0.5">
-              Admin Panel
-            </p>
           </div>
         </div>
- 
-        <nav className="mt-8 flex-1 space-y-2">
-          {visibleItems.length === 0 ? (
-            <p className="rounded-2xl border border-slate-100 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-500">
-              No sections assigned to this role.
-            </p>
-          ) : null}
+
+        {/* Navigation */}
+        <nav className="mt-2 flex-1 space-y-0.5 px-1.5 py-2 overflow-y-auto">
           {visibleItems.map((item) => {
             const active = activeView === item.id;
+            const iconName = PHOSPHOR_ICONS[item.id] || "Circle";
             return (
               <button
                 key={item.id}
                 onClick={() => onNavigate(item.id)}
-                className={`group relative flex w-full items-center gap-3 rounded-2xl px-2 py-3 text-left transition-colors duration-200 ${
+                title={collapsed ? item.label : undefined}
+                className={`group flex items-center rounded-xl py-2.5 transition-all duration-150 ${
+                  collapsed ? "mx-auto h-10 w-10 justify-center px-0" : "w-full gap-3 px-3 text-left"
+                } ${
                   active
-                    ? "bg-gradient-to-r from-indigo-600 to-violet-500 text-white shadow-lg shadow-indigo-500/30"
-                    : "text-slate-500 hover:bg-white/80 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-gray-800/80 dark:hover:text-white"
+                    ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
                 }`}
               >
-                <div
-                  className={`flex h-6 w-8 items-center justify-center rounded-xl text-sm transition ${
-                    active
-                      ? "border-white/30 bg-white/20 text-white"
-                      : "border-slate-200 bg-white text-slate-600 group-hover:border-indigo-200 group-hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-slate-300 dark:group-hover:border-indigo-500 dark:group-hover:text-indigo-300"
+                <span className={`flex-shrink-0 ${collapsed ? "" : ""}`}>
+                  <PhosphorIcon
+                    name={iconName}
+                    size={19}
+                    weight={active ? "fill" : "regular"}
+                    className={active ? "text-white" : "text-slate-400 group-hover:text-indigo-500"}
+                  />
+                </span>
+                <span
+                  className={`overflow-hidden whitespace-nowrap text-sm font-medium transition-all duration-300 ease-in-out ${
+                    collapsed ? "w-0 opacity-0 pointer-events-none" : "flex-1 opacity-100"
                   }`}
                 >
-                  <LucideIcon name={item.icon} className="h-4 w-4" strokeWidth={2} />
-                </div>
-                <span className="text-sm font-semibold">{item.label}</span>
-                {active ? (
-                  <span className="ml-auto h-2 w-2 rounded-full bg-white" />
-                ) : null}
+                  {item.label}
+                </span>
+                {active && !collapsed && (
+                  <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-white/70" />
+                )}
               </button>
             );
           })}
         </nav>
-{/* 
-        {admin ? (
-          <div className="mt-6 rounded-3xl border border-white/60 bg-white/80 p-4 text-sm text-slate-700 shadow-lg shadow-indigo-100/50">
-            <p className="text-xs uppercase tracking-wide text-slate-400">Logged in as</p>
-            <p className="mt-1 text-base font-semibold text-slate-900">
-              {admin.name || admin.email}
-            </p>
-            <p className="text-xs text-slate-500">{admin.email}</p>
-            <div className="mt-4 flex items-center justify-between rounded-2xl bg-slate-100/60 px-3 py-2 text-xs text-slate-500">
-              <span className="inline-flex items-center gap-1 text-slate-600">
-                <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                Live sync
-              </span>
-              <span>v1.0</span>
-            </div>
-            <button
-              onClick={onLogout}
-              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+
+        {/* Logout */}
+        <div className="border-t border-slate-100 px-1.5 py-3">
+          <button
+            onClick={onLogout}
+            title={collapsed ? "Log out" : undefined}
+            className={`group flex items-center rounded-xl bg-red-50 py-2.5 text-red-500 transition-all duration-150 hover:bg-red-100 hover:text-red-600 ${
+              collapsed ? "mx-auto h-10 w-10 justify-center px-0" : "w-full gap-3 px-3"
+            }`}
+          >
+            <span className="flex-shrink-0">
+              <PhosphorIcon
+                name="SignOut"
+                size={19}
+                weight="regular"
+                className="text-red-500 transition-colors group-hover:text-red-600"
+              />
+            </span>
+            <span
+              className={`overflow-hidden whitespace-nowrap text-sm font-medium transition-all duration-300 ease-in-out ${
+                collapsed ? "w-0 opacity-0 pointer-events-none" : "flex-1 opacity-100"
+              }`}
             >
-              <LucideIcon name="Power" className="h-3.5 w-3.5" />
               Log out
-            </button>
-          </div>
-        ) : null} */}
+            </span>
+          </button>
+        </div>
+
       </div>
     </aside>
   );

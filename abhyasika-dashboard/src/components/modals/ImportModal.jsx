@@ -632,7 +632,7 @@ function ImportModal({
             type="button"
             onClick={handleImport}
             disabled={!validRows.length || importing}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+            className="btn-gradient-primary inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold disabled:bg-none disabled:bg-indigo-300"
           >
             {importing ? (
               <>

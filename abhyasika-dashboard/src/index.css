@@ -11,72 +11,51 @@ body,
 body {
   font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
-  background: radial-gradient(circle at 20% 20%, rgba(129, 140, 248, 0.18), transparent 45%),
-    radial-gradient(circle at 80% 0%, rgba(248, 113, 113, 0.15), transparent 40%),
-    linear-gradient(135deg, #f8fafc 0%, #eef2ff 50%, #fdf2f8 100%);
+  background-color: #f8fafc;
 }
 
 :root {
   color-scheme: light;
 }
 
-.dark {
-  color-scheme: dark;
-}
+@layer components {
+  .auth-input {
+    @apply w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100;
+  }
 
-.dark body {
-  background: radial-gradient(circle at 10% 20%, rgba(15, 23, 42, 0.8), transparent 45%),
-    radial-gradient(circle at 90% 10%, rgba(76, 29, 149, 0.5), transparent 50%),
-    linear-gradient(135deg, #0f172a 0%, #1f2937 60%, #1e1b4b 100%);
-  color: #e2e8f0;
-}
+  .btn-gradient-primary {
+    @apply bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm transition hover:from-indigo-500 hover:to-violet-500;
+  }
 
-.dark .bg-white,
-.dark .bg-white\/95,
-.dark .bg-white\/70,
-.dark .bg-slate-50,
-.dark .bg-indigo-50,
-.dark .bg-gradient-to-br,
-.dark .bg-gradient-to-r {
-  background-color: rgba(15, 23, 42, 0.85) !important;
-  color: #f8fafc !important;
-  border-color: rgba(148, 163, 184, 0.3) !important;
-}
+  .btn-gradient-primary:disabled {
+    @apply cursor-not-allowed opacity-60;
+  }
 
-.dark .border-slate-100,
-.dark .border-slate-100\/80,
-.dark .border-white\/60,
-.dark .border-white\/50 {
-  border-color: rgba(148, 163, 184, 0.25) !important;
-}
+  .toggle-gradient-on {
+    @apply bg-gradient-to-r from-indigo-600 to-violet-600;
+  }
 
-.dark .text-slate-900,
-.dark .text-slate-800 {
-  color: #f8fafc !important;
-}
+  table {
+    overflow: hidden;
+    border-collapse: separate;
+    border-spacing: 0;
+    background-color: #fff;
+  }
 
-.dark .text-slate-700,
-.dark .text-slate-600 {
-  color: #e2e8f0 !important;
-}
+  table thead {
+    background-color: #eef2f7 !important;
+  }
 
-.dark .text-slate-500,
-.dark .text-slate-400,
-.dark .text-slate-300 {
-  color: #cbd5f5 !important;
-}
+  table thead th {
+    color: #475569 !important;
+    font-weight: 700;
+  }
 
-.dark input,
-.dark select,
-.dark textarea {
-  background-color: rgba(15, 23, 42, 0.6) !important;
-  border-color: rgba(148, 163, 184, 0.4) !important;
-  color: #f8fafc !important;
-}
+  table tbody tr:last-child td:first-child {
+    border-bottom-left-radius: 0.5rem;
+  }
 
-.dark .shadow,
-.dark .shadow-sm,
-.dark .shadow-md,
-.dark .shadow-lg {
-  box-shadow: 0 10px 35px rgba(2, 6, 23, 0.5) !important;
+  table tbody tr:last-child td:last-child {
+    border-bottom-right-radius: 0.5rem;
+  }
 }

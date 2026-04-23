@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, memo, useRef } from "react";
+import ThemeSelect from "../components/common/ThemeSelect.jsx";
 import LucideIcon from "../components/icons/LucideIcon.jsx";
 import PlanModal from "../components/modals/PlanModal.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -112,6 +113,7 @@ function SettingsView({
   const [roleError, setRoleError] = useState("");
   const [roleSaving, setRoleSaving] = useState(false);
   const [teamForm, setTeamForm] = useState({
+    accountType: "coordinator",
     mode: "manual",
     fullName: "",
     email: "",
@@ -138,6 +140,14 @@ function SettingsView({
         }),
         {}
       )
+  );
+
+  const coordinatorRole = useMemo(
+    () =>
+      roles.find(
+        (role) => role.name?.trim().toLowerCase() === "coordinator"
+      ) ?? null,
+    [roles]
   );
 
   const toggleSection = (key) =>
@@ -247,6 +257,17 @@ function SettingsView({
       active = false;
     };
   }, [admin?.id, api, baseProfile, onLogoUploaded]);
+
+  useEffect(() => {
+    if (!coordinatorRole || teamForm.accountType !== "coordinator") return;
+    setTeamForm((prev) => {
+      if (prev.roleName === coordinatorRole.name) return prev;
+      return {
+        ...prev,
+        roleName: coordinatorRole.name,
+      };
+    });
+  }, [coordinatorRole, teamForm.accountType]);
 
   useEffect(() => {
     let active = true;
@@ -519,6 +540,12 @@ function SettingsView({
     setTeamForm((prev) => ({
       ...prev,
       [name]: value,
+      ...(name === "accountType"
+        ? {
+            roleName:
+              value === "coordinator" ? coordinatorRole?.name || "Coordinator" : "",
+          }
+        : {}),
     }));
   };
 
@@ -529,6 +556,10 @@ function SettingsView({
 
     if (roles.length === 0) {
       setTeamError("Create a role before adding teammates.");
+      return;
+    }
+    if (teamForm.accountType === "coordinator" && !coordinatorRole) {
+      setTeamError("Coordinator role is not available yet. Restart the server once to seed it, then refresh this page.");
       return;
     }
     if (!teamForm.email.trim()) {
@@ -570,7 +601,9 @@ function SettingsView({
 
       setTeamMessage(
         teamForm.mode === "manual"
-          ? "Account created. Share credentials securely."
+          ? teamForm.accountType === "coordinator"
+            ? "Coordinator account created. They can now sign in from the main login page."
+            : "Account created. Share credentials securely."
           : result?.temporaryPassword
           ? `Invite prepared. Share this temporary password manually: ${result.temporaryPassword}`
           : "Teammate account created."
@@ -580,7 +613,8 @@ function SettingsView({
         fullName: "",
         email: "",
         password: "",
-        roleName: "",
+        roleName:
+          prev.accountType === "coordinator" ? coordinatorRole?.name || "Coordinator" : "",
       }));
       setTimeout(() => setTeamMessage(""), 4000);
     } catch (err) {
@@ -687,34 +721,34 @@ function SettingsView({
             label: "Total seats",
             value: seatStats.total,
             icon: "layoutGrid",
-            tone: "from-slate-100 to-slate-50 text-slate-900 dark:from-gray-800 dark:to-gray-800/50 dark:text-slate-100",
+            tone: "bg-emerald-50 text-emerald-700",
             sub: `${seatStats.available} available`,
           },
           {
             label: "Maintenance",
             value: seatStats.maintenance,
             icon: "wrench",
-            tone: "from-amber-100 to-orange-50 text-amber-800 dark:from-amber-900/40 dark:to-amber-900/20 dark:text-amber-100",
+            tone: "bg-indigo-50 text-indigo-700",
             sub: "Temporarily offline",
           },
           {
             label: "Active roles",
             value: roles.length,
             icon: "shieldCheck",
-            tone: "from-emerald-100 to-emerald-50 text-emerald-800 dark:from-emerald-900/40 dark:to-emerald-900/20 dark:text-emerald-100",
+            tone: "bg-amber-50 text-amber-700",
             sub: "Team permission sets",
           },
           {
             label: "Expense tags",
             value: expenseCategories.length,
             icon: "tag",
-            tone: "from-sky-100 to-sky-50 text-sky-800 dark:from-sky-900/40 dark:to-sky-900/20 dark:text-sky-100",
+            tone: "bg-rose-50 text-rose-700",
             sub: "Classified categories",
           },
         ].map((card) => (
           <div
             key={card.label}
-            className={`rounded-2xl border border-white/70 dark:border-gray-800 bg-gradient-to-br ${card.tone} p-4 shadow-sm`}
+            className={`rounded-2xl border border-slate-100 dark:border-gray-800 ${card.tone} p-4 shadow-sm`}
           >
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold uppercase tracking-wide opacity-80">
@@ -776,7 +810,7 @@ function SettingsView({
             </label>
             <label className="flex flex-col text-sm font-medium text-slate-700 dark:text-slate-200">
               Status
-              <select
+              <ThemeSelect
                 name="status"
                 value={seatForm.status}
                 onChange={(event) =>
@@ -789,12 +823,12 @@ function SettingsView({
               >
                 <option value="available">Available</option>
                 <option value="maintenance">Maintenance</option>
-              </select>
+              </ThemeSelect>
             </label>
             <div className="flex items-end">
               <button
                 type="submit"
-                className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
+                className="btn-gradient-primary inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold"
               >
                 Add Seat
               </button>
@@ -836,7 +870,7 @@ function SettingsView({
                       }))
                     }
                     className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${
-                      bulkSeatForm.usePrefix ? "bg-indigo-600" : "bg-slate-300"
+                      bulkSeatForm.usePrefix ? "toggle-gradient-on" : "bg-slate-300"
                     }`}
                   >
                     <span className="sr-only">Toggle prefix usage</span>
@@ -895,7 +929,7 @@ function SettingsView({
               </label>
               <label className="flex flex-col text-sm font-medium text-slate-700 dark:text-slate-200">
                 Status
-                <select
+                <ThemeSelect
                   name="status"
                   value={bulkSeatForm.status}
                   onChange={(event) =>
@@ -908,7 +942,7 @@ function SettingsView({
                 >
                   <option value="available">Available</option>
                   <option value="maintenance">Maintenance</option>
-                </select>
+                </ThemeSelect>
               </label>
               <div className="flex items-end">
                 <button
@@ -984,7 +1018,7 @@ function SettingsView({
                   setPlanEditing(null);
                   setPlanModalOpen(true);
                 }}
-                className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
+                className="btn-gradient-primary inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold"
               >
                 <LucideIcon name="Plus" className="h-4 w-4" />
                 New Plan
@@ -1399,7 +1433,7 @@ function SettingsView({
                 Team Access
               </h2>
               <p className="text-sm text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                Create teammate logins and assign role-based access for this workspace.
+                Create coordinator and teammate logins with role-based access.
               </p>
             </div>
           </div>
@@ -1410,6 +1444,51 @@ function SettingsView({
         </button>
         {openSections.team ? (
         <form onSubmit={handleTeamSubmit} className="mt-6 space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            {[
+              {
+                key: "coordinator",
+                title: "Coordinator account",
+                description: "Limited access for payment requests, renewals, admissions, and student lookup.",
+              },
+              {
+                key: "custom",
+                title: "Custom team member",
+                description: "Choose any role you created in Role Directory.",
+              },
+            ].map((option) => {
+              const active = teamForm.accountType === option.key;
+              return (
+                <label
+                  key={option.key}
+                  className={`cursor-pointer rounded-2xl border p-4 transition ${
+                    active
+                      ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                      : "border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-slate-600 dark:text-slate-300 hover:border-indigo-200"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="accountType"
+                    value={option.key}
+                    checked={active}
+                    onChange={handleTeamChange}
+                    className="sr-only"
+                  />
+                  <span className="flex items-center gap-2 text-sm font-semibold">
+                    <LucideIcon
+                      name={option.key === "coordinator" ? "clipboardCheck" : "users2"}
+                      className="h-4 w-4"
+                    />
+                    {option.title}
+                  </span>
+                  <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    {option.description}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
           <div className="flex flex-wrap gap-3">
             {[
               { key: "manual", label: "Manual account" },
@@ -1440,14 +1519,21 @@ function SettingsView({
               Create at least one role above before inviting teammates.
             </p>
           ) : null}
+          {teamForm.accountType === "coordinator" && roles.length > 0 && !coordinatorRole ? (
+            <p className="text-xs font-semibold text-amber-600">
+              Coordinator role is missing. Restart the server once to seed it, then refresh this page.
+            </p>
+          ) : null}
           <div className="grid gap-4 md:grid-cols-2">
             <label className="flex flex-col text-sm font-medium text-slate-700 dark:text-slate-200">
-              Team member name
+              {teamForm.accountType === "coordinator" ? "Coordinator name" : "Team member name"}
               <input
                 name="fullName"
                 value={teamForm.fullName}
                 onChange={handleTeamChange}
-                placeholder="Optional"
+                placeholder={
+                  teamForm.accountType === "coordinator" ? "e.g. Payment Coordinator" : "Optional"
+                }
                 className="mt-1 rounded-xl border border-slate-200 dark:border-gray-700 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
               />
             </label>
@@ -1466,15 +1552,19 @@ function SettingsView({
           <div className="grid gap-4 md:grid-cols-2">
             <label className="flex flex-col text-sm font-medium text-slate-700 dark:text-slate-200">
               Role
-              <select
+              <ThemeSelect
                 name="roleName"
                 value={teamForm.roleName}
                 onChange={handleTeamChange}
                 className="mt-1 rounded-xl border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:opacity-60"
-                disabled={roles.length === 0}
+                disabled={roles.length === 0 || teamForm.accountType === "coordinator"}
               >
                 {roles.length === 0 ? (
                   <option value="">Create a role first</option>
+                ) : teamForm.accountType === "coordinator" ? (
+                  <option value={coordinatorRole?.name || "Coordinator"}>
+                    {coordinatorRole?.name || "Coordinator"}
+                  </option>
                 ) : (
                   <>
                     <option value="">Select role</option>
@@ -1485,7 +1575,7 @@ function SettingsView({
                     ))}
                   </>
                 )}
-              </select>
+              </ThemeSelect>
             </label>
             {teamForm.mode === "manual" ? (
               <label className="flex flex-col text-sm font-medium text-slate-700 dark:text-slate-200">
@@ -1598,7 +1688,7 @@ function SettingsView({
               </label>
               <label className="flex flex-col text-sm font-medium text-slate-700 dark:text-slate-200">
                 Timezone
-                <select
+                <ThemeSelect
                   name="timezone"
                   value={profile.timezone}
                   onChange={handleChange}
@@ -1609,7 +1699,7 @@ function SettingsView({
                       {tz}
                     </option>
                   ))}
-                </select>
+                </ThemeSelect>
               </label>
             </div>
             <div className="flex flex-col gap-3 rounded-2xl border border-slate-100 dark:border-gray-800 bg-slate-50 dark:bg-gray-900/60/70 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1753,7 +1843,7 @@ function SettingsView({
             </label>
             <label className="flex flex-col text-sm font-medium text-slate-700 dark:text-slate-200">
               Auto data export
-              <select
+              <ThemeSelect
                 name="dataExportFrequency"
                 value={profile.dataExportFrequency}
                 onChange={handleChange}
@@ -1762,7 +1852,7 @@ function SettingsView({
                 <option value="daily">Daily summary</option>
                 <option value="weekly">Weekly digest</option>
                 <option value="monthly">Monthly report</option>
-              </select>
+              </ThemeSelect>
             </label>
             <div className="rounded-2xl border border-slate-100 dark:border-gray-800 bg-gradient-to-r from-indigo-500 to-purple-500 p-4 text-white">
               <p className="text-sm font-medium uppercase tracking-wide text-white/80">
@@ -1870,7 +1960,7 @@ function SettingsView({
             <button
               type="submit"
               disabled={saving}
-              className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-indigo-500 disabled:bg-indigo-300"
+              className="btn-gradient-primary inline-flex items-center gap-2 rounded-2xl px-5 py-2 text-sm font-semibold disabled:bg-none disabled:bg-indigo-300"
             >
               {saving ? (
                 <>

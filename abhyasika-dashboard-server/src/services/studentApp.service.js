@@ -104,6 +104,48 @@ async function getStudent(studentId, workspaceOwnerId) {
   return mapStudent(row);
 }
 
+async function hasPaidSeatSelectionGrant(studentId, workspaceOwnerId) {
+  const grant = await queryOne(
+    `SELECT id
+     FROM scheduled_payment_requests
+     WHERE student_id = ?
+       AND workspace_owner_id = ?
+       AND status = 'paid'
+       AND allow_seat_selection = 1
+     ORDER BY updated_at DESC, created_at DESC
+     LIMIT 1`,
+    [studentId, workspaceOwnerId]
+  );
+  return Boolean(grant);
+}
+
+async function assertCanSelectSeat(studentId, workspaceOwnerId) {
+  const student = await getStudent(studentId, workspaceOwnerId);
+
+  if (student.current_seat_id) {
+    throw new AppError("You already have a seat assigned", 400);
+  }
+
+  if (!student.renewal_date) {
+    throw new AppError("You must have an active plan before selecting a seat", 400);
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const renewal = new Date(student.renewal_date);
+  renewal.setHours(0, 0, 0, 0);
+  if (renewal < today) {
+    throw new AppError("Your plan has expired. Please renew before selecting a seat", 400);
+  }
+
+  const hasGrant = await hasPaidSeatSelectionGrant(studentId, workspaceOwnerId);
+  if (!hasGrant) {
+    throw new AppError("Seat selection is not enabled for your account", 403);
+  }
+
+  return student;
+}
+
 export async function getProfile(studentId, workspaceOwnerId) {
   return getStudent(studentId, workspaceOwnerId);
 }
@@ -174,9 +216,9 @@ export async function getSubscription(studentId, workspaceOwnerId) {
   const pendingQr = await queryOne(
     `SELECT id, amount, valid_from, valid_until, created_at
      FROM pending_payments
-     WHERE student_id = ? AND status = 'pending'
+     WHERE student_id = ? AND workspace_owner_id = ? AND status = 'pending'
      ORDER BY created_at DESC LIMIT 1`,
-    [studentId]
+    [studentId, workspaceOwnerId]
   );
 
   // Check for a pending scheduled payment request from admin
@@ -184,14 +226,27 @@ export async function getSubscription(studentId, workspaceOwnerId) {
     `SELECT spr.*, p.name AS plan_name
      FROM scheduled_payment_requests spr
      JOIN plans p ON p.id = spr.plan_id
-     WHERE spr.student_id = ? AND spr.status = 'sent'
+     WHERE spr.student_id = ? AND spr.workspace_owner_id = ? AND spr.status = 'sent'
      ORDER BY spr.created_at DESC LIMIT 1`,
-    [studentId]
+    [studentId, workspaceOwnerId]
   );
+  const hasActivePlan = (() => {
+    if (!student.renewal_date) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const renewal = new Date(student.renewal_date);
+    renewal.setHours(0, 0, 0, 0);
+    return renewal >= today;
+  })();
+  const seatSelectionAllowed =
+    !student.current_seat_id && hasActivePlan
+      ? await hasPaidSeatSelectionGrant(studentId, workspaceOwnerId)
+      : false;
 
   return {
     plan,
     seat,
+    seat_selection_allowed: seatSelectionAllowed,
     renewal_date: student.renewal_date,
     days_remaining: daysRemaining,
     registration_paid: student.registration_paid,
@@ -215,8 +270,11 @@ export async function getSubscription(studentId, workspaceOwnerId) {
           type: scheduledRequest.type,
           amount: Number(scheduledRequest.amount),
           deposit_amount: Number(scheduledRequest.deposit_amount ?? 0),
-          discount_enabled: Boolean(scheduledRequest.discount_enabled),
+          discount_enabled: toBoolean(scheduledRequest.discount_enabled),
           discount_amount: Number(scheduledRequest.discount_amount ?? 0),
+          late_fee_enabled: toBoolean(scheduledRequest.late_fee_enabled),
+          late_fee_amount: Number(scheduledRequest.late_fee_amount ?? 0),
+          allow_seat_selection: toBoolean(scheduledRequest.allow_seat_selection),
           total_amount:
             scheduledRequest.total_amount != null
               ? Number(scheduledRequest.total_amount)
@@ -224,7 +282,8 @@ export async function getSubscription(studentId, workspaceOwnerId) {
                   0,
                   Number(scheduledRequest.amount) +
                     Number(scheduledRequest.deposit_amount ?? 0) -
-                    Number(scheduledRequest.discount_amount ?? 0)
+                    Number(scheduledRequest.discount_amount ?? 0) +
+                    Number(scheduledRequest.late_fee_amount ?? 0)
                 ),
           valid_from: toDateString(scheduledRequest.valid_from),
           valid_until: toDateString(scheduledRequest.valid_until),
@@ -579,7 +638,8 @@ export async function createQrPaymentRequest(
             0,
             Number(req.amount) +
               Number(req.deposit_amount ?? 0) -
-              Number(req.discount_amount ?? 0)
+              Number(req.discount_amount ?? 0) +
+              Number(req.late_fee_amount ?? 0)
           );
 
     usedPlanId  = req.plan_id;
@@ -627,7 +687,9 @@ export async function createQrPaymentRequest(
 /**
  * List available seats (only status=available) for student seat selection.
  */
-export async function listSeatsForStudent(workspaceOwnerId) {
+export async function listSeatsForStudent(studentId, workspaceOwnerId) {
+  await assertCanSelectSeat(studentId, workspaceOwnerId);
+
   const rows = await query(
     `SELECT id, seat_number FROM seats
      WHERE workspace_owner_id = ? AND status = 'available'
@@ -643,23 +705,7 @@ export async function listSeatsForStudent(workspaceOwnerId) {
 export async function selectSeatForStudent(studentId, workspaceOwnerId, seatId) {
   if (!seatId) throw new AppError("seat_id is required", 400);
 
-  const student = await getStudent(studentId, workspaceOwnerId);
-
-  // Must have an active paid plan
-  if (!student.renewal_date) {
-    throw new AppError("You must have an active plan before selecting a seat", 400);
-  }
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const renewal = new Date(student.renewal_date);
-  renewal.setHours(0, 0, 0, 0);
-  if (renewal < today) {
-    throw new AppError("Your plan has expired. Please renew before selecting a seat", 400);
-  }
-
-  if (student.current_seat_id) {
-    throw new AppError("You already have a seat assigned", 400);
-  }
+  await assertCanSelectSeat(studentId, workspaceOwnerId);
 
   // Delegate to existing seats service
   const { assignSeat } = await import("./seats.service.js");
@@ -695,7 +741,8 @@ export async function createRazorpayOrderForScheduledRequest(studentId, workspac
           0,
           Number(req.amount) +
             Number(req.deposit_amount ?? 0) -
-            Number(req.discount_amount ?? 0)
+            Number(req.discount_amount ?? 0) +
+            Number(req.late_fee_amount ?? 0)
         );
 
   const amountPaise = Math.round(chargeAmount * 100);

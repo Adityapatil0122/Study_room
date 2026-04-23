@@ -8,6 +8,8 @@ import React, {
 } from "react";
 import { createApiClient } from "../lib/apiClient.js";
 import {
+  COORDINATOR_PERMISSIONS,
+  COORDINATOR_VIEW_IDS,
   buildPermissionTemplate,
   normalizePermissions,
   ALL_VIEW_IDS,
@@ -25,10 +27,17 @@ const AuthContext = createContext(null);
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://10.0.2.2:4000/api";
 
+const isCoordinatorSession = (session) => {
+  const roleNames = session?.user?.user_metadata?.role_names ?? [];
+  return roleNames.some(
+    (role) => role?.trim?.().toLowerCase() === "coordinator"
+  );
+};
+
 export function AuthProvider({ children }) {
   const api = useMemo(() => createApiClient(), []);
   const [session, setSession] = useState(null);
-  const [userType, setUserType] = useState(null); // "admin" | "student" | null
+  const [userType, setUserType] = useState(null); // "admin" | "coordinator" | "student" | null
   const [admin, setAdmin] = useState(null);
   const [student, setStudent] = useState(null);
   const [authInitializing, setAuthInitializing] = useState(true);
@@ -46,10 +55,18 @@ export function AuthProvider({ children }) {
   );
 
   const applySession = useCallback(async (nextSession, nextUserType) => {
-    setSession(nextSession);
-    setUserType(nextUserType ?? null);
+    const resolvedUserType =
+      nextUserType === "admin" && isCoordinatorSession(nextSession)
+        ? "coordinator"
+        : nextUserType;
 
-    if (nextSession?.user && nextUserType === "admin") {
+    setSession(nextSession);
+    setUserType(resolvedUserType ?? null);
+
+    if (
+      nextSession?.user &&
+      (resolvedUserType === "admin" || resolvedUserType === "coordinator")
+    ) {
       const { user } = nextSession;
       setAdmin({
         email: user.email,
@@ -59,8 +76,22 @@ export function AuthProvider({ children }) {
       setStudent(null);
       setAuthError("");
       await setStoredSession(nextSession).catch(() => {});
-      await setStoredUserType("admin").catch(() => {});
-    } else if (nextSession?.user && nextUserType === "student") {
+      await setStoredUserType(resolvedUserType).catch(() => {});
+      if (resolvedUserType === "coordinator") {
+        setAllowedViews(COORDINATOR_VIEW_IDS);
+        setRolePermissions(COORDINATOR_PERMISSIONS);
+      } else {
+        setAllowedViews(ALL_VIEW_IDS);
+        setRolePermissions(
+          buildPermissionTemplate({
+            view: true,
+            add: true,
+            edit: true,
+            delete: true,
+          })
+        );
+      }
+    } else if (nextSession?.user && resolvedUserType === "student") {
       const { user } = nextSession;
       setStudent({
         id: user.id,
@@ -122,7 +153,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let isMounted = true;
     async function loadRole() {
-      if (userType !== "admin") {
+      if (userType !== "admin" && userType !== "coordinator") {
         if (isMounted) {
           setActiveRole(null);
           setAllowedViews(ALL_VIEW_IDS);
@@ -141,15 +172,20 @@ export function AuthProvider({ children }) {
       if (!roleId) {
         if (isMounted) {
           setActiveRole(null);
-          setAllowedViews(ALL_VIEW_IDS);
-          setRolePermissions(
-            buildPermissionTemplate({
-              view: true,
-              add: true,
-              edit: true,
-              delete: true,
-            })
-          );
+          if (userType === "coordinator") {
+            setAllowedViews(COORDINATOR_VIEW_IDS);
+            setRolePermissions(COORDINATOR_PERMISSIONS);
+          } else {
+            setAllowedViews(ALL_VIEW_IDS);
+            setRolePermissions(
+              buildPermissionTemplate({
+                view: true,
+                add: true,
+                edit: true,
+                delete: true,
+              })
+            );
+          }
         }
         return;
       }
@@ -160,7 +196,12 @@ export function AuthProvider({ children }) {
         const role = roles.find((item) => item.id === roleId);
         if (!role) {
           setActiveRole(null);
-          setAllowedViews(ALL_VIEW_IDS);
+          if (userType === "coordinator") {
+            setAllowedViews(COORDINATOR_VIEW_IDS);
+            setRolePermissions(COORDINATOR_PERMISSIONS);
+          } else {
+            setAllowedViews(ALL_VIEW_IDS);
+          }
           return;
         }
         const normalizedPermissions = normalizePermissions(role.permissions);
@@ -169,11 +210,22 @@ export function AuthProvider({ children }) {
         const allowed = Object.entries(normalizedPermissions)
           .filter(([, perms]) => perms.view)
           .map(([viewId]) => viewId);
-        setAllowedViews(allowed.length ? allowed : ALL_VIEW_IDS);
+        setAllowedViews(
+          allowed.length
+            ? allowed
+            : userType === "coordinator"
+            ? COORDINATOR_VIEW_IDS
+            : ALL_VIEW_IDS
+        );
       } catch {
         if (!isMounted) return;
         setActiveRole(null);
-        setAllowedViews(ALL_VIEW_IDS);
+        if (userType === "coordinator") {
+          setAllowedViews(COORDINATOR_VIEW_IDS);
+          setRolePermissions(COORDINATOR_PERMISSIONS);
+        } else {
+          setAllowedViews(ALL_VIEW_IDS);
+        }
       }
     }
 
@@ -230,8 +282,11 @@ export function AuthProvider({ children }) {
       try {
         try {
           const adminSession = await api.login(email, password);
-          await applySession(adminSession, "admin");
-          return { userType: "admin", user: adminSession?.user ?? null };
+          const resolvedUserType = isCoordinatorSession(adminSession)
+            ? "coordinator"
+            : "admin";
+          await applySession(adminSession, resolvedUserType);
+          return { userType: resolvedUserType, user: adminSession?.user ?? null };
         } catch (adminErr) {
           try {
             const studentSession = await api.studentLogin(email, password);
@@ -283,7 +338,7 @@ export function AuthProvider({ children }) {
 
   const hasPermission = useCallback(
     (viewId, action = "view") => {
-      if (userType !== "admin") return false;
+      if (userType !== "admin" && userType !== "coordinator") return false;
       if (!viewId) return false;
       const perms = rolePermissions?.[viewId];
       if (!perms) return false;

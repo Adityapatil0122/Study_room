@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
+import ThemeSelect from "../components/common/ThemeSelect.jsx";
 import LucideIcon from "../components/icons/LucideIcon.jsx";
 import Modal from "../components/common/Modal.jsx";
 
@@ -60,7 +61,7 @@ function ExpenseModal({ open, onClose, onSubmit, categories = [] }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col text-sm font-medium text-slate-700">
             Category
-            <select
+            <ThemeSelect
               name="category"
               value={form.category}
               onChange={handleChange}
@@ -72,7 +73,7 @@ function ExpenseModal({ open, onClose, onSubmit, categories = [] }) {
                   {option.label}
                 </option>
               ))}
-            </select>
+            </ThemeSelect>
           </label>
 
           <label className="flex flex-col text-sm font-medium text-slate-700">
@@ -89,7 +90,7 @@ function ExpenseModal({ open, onClose, onSubmit, categories = [] }) {
 
           <label className="flex flex-col text-sm font-medium text-slate-700">
             Paid Via
-            <select
+            <ThemeSelect
               name="paid_via"
               value={form.paid_via}
               onChange={handleChange}
@@ -97,7 +98,7 @@ function ExpenseModal({ open, onClose, onSubmit, categories = [] }) {
             >
               <option value="upi">UPI / Bank</option>
               <option value="cash">Cash</option>
-            </select>
+            </ThemeSelect>
           </label>
 
           <label className="flex flex-col text-sm font-medium text-slate-700">
@@ -134,7 +135,7 @@ function ExpenseModal({ open, onClose, onSubmit, categories = [] }) {
           </button>
           <button
             type="submit"
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
+            className="btn-gradient-primary rounded-xl px-4 py-2 text-sm font-semibold"
           >
             Save Expense
           </button>
@@ -191,7 +192,7 @@ function ExpensesView({
           </button>
           <button
             onClick={() => setModalOpen(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-500"
+            className="btn-gradient-primary inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium"
           >
             <LucideIcon name="wallet" className="h-4 w-4" />
             Add Expense
@@ -200,27 +201,27 @@ function ExpensesView({
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-slate-100 bg-emerald-50 p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-400">
             Total Spend
           </p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">
+          <p className="mt-2 text-2xl font-semibold text-emerald-700">
             ₹{totalSpend.toLocaleString("en-IN")}
           </p>
         </div>
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-slate-100 bg-indigo-50 p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-400">
             Rent & Lease
           </p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">
+          <p className="mt-2 text-2xl font-semibold text-indigo-700">
             ₹{rentSpend.toLocaleString("en-IN")}
           </p>
         </div>
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-slate-100 bg-amber-50 p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-400">
             Entries
           </p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">
+          <p className="mt-2 text-2xl font-semibold text-amber-700">
             {expenses.length}
           </p>
         </div>

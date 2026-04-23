@@ -17,8 +17,10 @@ import AssignSeatModal from "./components/modals/AssignSeatModal.jsx";
 import SeatDetailsModal from "./components/modals/SeatDetailsModal.jsx";
 import ImportModal from "./components/modals/ImportModal.jsx";
 import LucideIcon from "./components/icons/LucideIcon.jsx";
+import PhosphorIcon from "./components/icons/PhosphorIcon.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
 import LoginView from "./views/LoginView.jsx";
+import StudentPortalView from "./views/StudentPortalView.jsx";
 import { createApiClient } from "./lib/apiClient.js";
 import { ALL_VIEW_IDS } from "./constants/views.js";
 import { ToastContainer, toast } from "react-toastify";
@@ -28,6 +30,10 @@ const DashboardView = lazy(() => import("./views/DashboardView.jsx"));
 const StudentsView = lazy(() => import("./views/StudentsView.jsx"));
 const SeatManagerView = lazy(() => import("./views/SeatManagerView.jsx"));
 const PaymentsView = lazy(() => import("./views/PaymentsView.jsx"));
+const SendPaymentRequestView = lazy(() =>
+  import("./views/SendPaymentRequestView.jsx")
+);
+const CoordinatorHomeView = lazy(() => import("./views/CoordinatorHomeView.jsx"));
 const SettingsView = lazy(() => import("./views/SettingsView.jsx"));
 const ExpensesView = lazy(() => import("./views/ExpensesView.jsx"));
 const AdmissionsView = lazy(() => import("./views/AdmissionsView.jsx"));
@@ -96,12 +102,10 @@ function App() {
     payload: null,
   });
 
-  const [theme, setTheme] = useState(() => {
-    if (typeof window === "undefined") return "light";
-    return localStorage.getItem("abhyasika-theme") || "light";
-  });
+  const theme = "light";
   const {
     session,
+    userType,
     isAuthenticated,
     admin,
     logout,
@@ -113,6 +117,7 @@ function App() {
     () => (allowedViews && allowedViews.length ? allowedViews : ALL_VIEW_IDS),
     [allowedViews]
   );
+  const isWorkspaceUser = userType === "admin" || userType === "coordinator";
   const ownerId = session?.user?.user_metadata?.owner_id ?? admin?.id;
   const rawRoleIds = session?.user?.user_metadata?.role_ids;
   const assignedRoleIds = useMemo(
@@ -121,6 +126,7 @@ function App() {
   );
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState("all");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const confirmLogout = () => {
     if (window.confirm("Are you sure you want to log out?")) {
@@ -210,42 +216,51 @@ function App() {
   }, [session?.user?.id, admin?.id, roles, assignedRoleIds]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem("abhyasika-theme", theme);
     const root = document.documentElement;
-    if (theme === "dark") {
-      root.classList.add("dark");
-    } else {
-      root.classList.remove("dark");
-    }
-    root.style.setProperty("color-scheme", theme === "dark" ? "dark" : "light");
-  }, [theme]);
+    root.classList.remove("dark");
+    root.style.setProperty("color-scheme", "light");
+  }, []);
 
   const headerHighlights = [
     {
-      label: "Total students",
+      label: "Total Students",
       value: students.length,
-      icon: "Users",
+      phosphorIcon: "Users",
+      bg: "bg-emerald-50",
+      border: "border-emerald-100",
+      iconBg: "bg-emerald-100",
+      iconColor: "text-emerald-600",
+      valueColor: "text-emerald-700",
     },
     {
-      label: "Active students",
+      label: "Active Students",
       value: heroMetrics.activeStudents,
-      icon: "Users2",
+      phosphorIcon: "UserCheck",
+      bg: "bg-indigo-50",
+      border: "border-indigo-100",
+      iconBg: "bg-indigo-100",
+      iconColor: "text-indigo-600",
+      valueColor: "text-indigo-700",
     },
     {
-      label: "Seats available",
-      value: `${heroMetrics.availableSeats} free`,
-      icon: "Armchair",
+      label: "Seats Available",
+      value: `${heroMetrics.availableSeats} / ${seats.length} free`,
+      phosphorIcon: "Armchair",
+      bg: "bg-amber-50",
+      border: "border-amber-100",
+      iconBg: "bg-amber-100",
+      iconColor: "text-amber-600",
+      valueColor: "text-amber-700",
     },
     {
       label: "Revenue (this month)",
       value: CURRENCY.format(heroMetrics.revenueThisMonth || 0),
-      icon: "TrendingUp",
-    },
-    {
-      label: "Renewals (7 days)",
-      value: heroMetrics.upcomingRenewals,
-      icon: "BellRing",
+      phosphorIcon: "TrendUp",
+      bg: "bg-rose-50",
+      border: "border-rose-100",
+      iconBg: "bg-rose-100",
+      iconColor: "text-rose-600",
+      valueColor: "text-rose-700",
     },
   ];
 
@@ -320,6 +335,38 @@ function App() {
       }));
   }, [students]);
 
+  const backendStudentRegistrationIds = useMemo(() => {
+    return new Set(
+      adminNotifs
+        .filter((notification) => notification.type === "student-registered")
+        .map((notification) => notification.object_id)
+        .filter(Boolean)
+    );
+  }, [adminNotifs]);
+
+  const userCreatedNotifications = useMemo(() => {
+    if (students.length === 0) return [];
+    const now = new Date();
+    const userCreatedSources = new Set(["student_app", "mobile_app"]);
+
+    return students
+      .filter((student) => {
+        if (!userCreatedSources.has(student.registration_source)) return false;
+        if (backendStudentRegistrationIds.has(student.id)) return false;
+        const joinDate = student.join_date ? new Date(student.join_date) : now;
+        const diffDays = (now - joinDate) / (1000 * 60 * 60 * 24);
+        return diffDays <= 7;
+      })
+      .map((student) => ({
+        id: `user-created-${student.id}`,
+        title: "New user created",
+        message: `${student.name} created a student account`,
+        tone: "info",
+        category: "admission",
+        date: student.join_date ? new Date(student.join_date) : now,
+      }));
+  }, [backendStudentRegistrationIds, students]);
+
   const paymentNotifications = useMemo(() => {
     if (payments.length === 0) return [];
     const now = new Date();
@@ -386,7 +433,8 @@ function App() {
       .map((n) => ({
         id: `backend-${n.id}`,
         _backendId: n.id,
-        title: n.title,
+        _objectId: n.object_id,
+        title: n.type === "student-registered" ? "New user created" : n.title,
         message: n.message ?? "",
         tone: n.type === "student-registered" ? "info" : "info",
         category: n.type === "student-registered" ? "admission" : "info",
@@ -401,6 +449,7 @@ function App() {
       ...renewalNotifications,
       ...registrationNotifications,
       ...qrEnrollmentNotifications,
+      ...userCreatedNotifications,
       ...paymentNotifications,
       ...seatMaintenanceNotifications,
     ];
@@ -412,6 +461,7 @@ function App() {
     renewalNotifications,
     registrationNotifications,
     qrEnrollmentNotifications,
+    userCreatedNotifications,
     paymentNotifications,
     seatMaintenanceNotifications,
   ]);
@@ -486,23 +536,20 @@ function App() {
     }
   }, [api]);
 
-  const toggleTheme = () =>
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
-
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !isWorkspaceUser) {
       return;
     }
     if (!normalizedAllowedViews.includes(activeView)) {
       const fallback = normalizedAllowedViews[0] ?? "dashboard";
       setActiveView(fallback);
     }
-  }, [isAuthenticated, normalizedAllowedViews, activeView]);
+  }, [isAuthenticated, isWorkspaceUser, normalizedAllowedViews, activeView]);
 
   useEffect(() => {
     let mounted = true;
     async function loadBranding() {
-      if (!isAuthenticated || !admin?.id) {
+      if (!isAuthenticated || !isWorkspaceUser || !admin?.id) {
         if (mounted) {
           setBranding({ logoUrl: "/images/abhyasika-logo.png", logoPath: "" });
         }
@@ -524,10 +571,10 @@ function App() {
     return () => {
       mounted = false;
     };
-  }, [api, isAuthenticated, admin?.id]);
+  }, [api, isAuthenticated, isWorkspaceUser, admin?.id]);
 
   useEffect(() => {
-    if (isAuthenticated) return;
+    if (isAuthenticated && isWorkspaceUser) return;
     setActiveView("dashboard");
     setStudents([]);
     setSeats([]);
@@ -543,7 +590,7 @@ function App() {
     setError("");
     hasSeenPendingNotificationsRef.current = false;
     previousPendingNotificationIdsRef.current = new Set();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isWorkspaceUser]);
 
   const loadWorkspaceData = useCallback(
     async ({ background = false } = {}) => {
@@ -598,7 +645,7 @@ function App() {
   );
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !isWorkspaceUser) {
       setInitialLoading(false);
       return undefined;
     }
@@ -612,13 +659,13 @@ function App() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [isAuthenticated, loadWorkspaceData]);
+  }, [isAuthenticated, isWorkspaceUser, loadWorkspaceData]);
 
   useEffect(() => {
     let mounted = true;
 
     async function fetchRoles() {
-      if (!isAuthenticated) {
+      if (!isAuthenticated || !isWorkspaceUser) {
         if (mounted) setRoles([]);
         return;
       }
@@ -642,7 +689,7 @@ function App() {
     return () => {
       mounted = false;
     };
-  }, [api, isAuthenticated, ownerId, assignedRoleIds]);
+  }, [api, isAuthenticated, isWorkspaceUser, ownerId, assignedRoleIds]);
 
   const canAccessView = useCallback(
     (viewId) => normalizedAllowedViews.includes(viewId),
@@ -1374,6 +1421,15 @@ function App() {
       <Suspense fallback={<LoadingState message="Loading section…" />}>
         <div className="space-y-6">
         <ErrorBanner message={error} />
+        {canAccessView("coordinator") && activeView === "coordinator" && (
+          <CoordinatorHomeView
+            students={students}
+            payments={payments}
+            pendingPayments={pendingPayments}
+            scheduledRequests={scheduledRequests}
+            onNavigate={navigateTo}
+          />
+        )}
         {canAccessView("dashboard") && activeView === "dashboard" && (
           <DashboardView
             students={students}
@@ -1416,18 +1472,37 @@ function App() {
             pendingPayments={pendingPayments}
             onApprovePending={handleApprovePendingPayment}
             onRejectPending={handleRejectPendingPayment}
-            scheduledRequests={scheduledRequests}
-            onCreateScheduledRequest={handleCreateScheduledRequest}
-            onCancelScheduledRequest={handleCancelScheduledRequest}
+          />
+        )}
+        {canAccessView("paymentRequests") && activeView === "paymentRequests" && (
+          <SendPaymentRequestView
             students={students}
             plans={plans}
+            seats={seats}
+            scheduledRequests={scheduledRequests}
+            onCreateScheduledRequest={
+              hasPermission("paymentRequests", "add")
+                ? handleCreateScheduledRequest
+                : null
+            }
+            onCancelScheduledRequest={
+              hasPermission("paymentRequests", "delete")
+                ? handleCancelScheduledRequest
+                : null
+            }
           />
         )}
         {canAccessView("renewals") && activeView === "renewals" && (
           <RenewalsView
             students={students}
             plans={plans}
+            seats={seats}
             onOpenModal={openModal}
+            onCreateScheduledRequest={
+              hasPermission("renewals", "add")
+                ? handleCreateScheduledRequest
+                : null
+            }
           />
         )}
         {canAccessView("reports") && activeView === "reports" && (
@@ -1440,7 +1515,12 @@ function App() {
           />
         )}
         {canAccessView("admissions") && activeView === "admissions" && (
-          <AdmissionsView />
+          <AdmissionsView
+            students={students}
+            onOpenModal={openModal}
+            onToggleActive={handleToggleActive}
+            busyIds={busyIds}
+          />
         )}
         {canAccessView("history") && activeView === "history" && (
           <HistoryView />
@@ -1489,7 +1569,7 @@ function App() {
   if (authInitializing) {
     return (
       <>
-        <LoadingState message="Checking admin session…" />
+        <LoadingState message="Checking session..." />
         {toastContainer}
       </>
     );
@@ -1504,13 +1584,18 @@ function App() {
     );
   }
 
+  if (userType === "student") {
+    return (
+      <>
+        <StudentPortalView />
+        {toastContainer}
+      </>
+    );
+  }
+
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-50 text-slate-900 transition-colors duration-300 ease-in-out dark:bg-gray-950 dark:text-slate-100">
-      <div className="pointer-events-none absolute inset-0 transition-opacity duration-300">
-        <div className="absolute left-24 top-10 h-72 w-72 rounded-full bg-indigo-100/70 blur-3xl dark:bg-indigo-900/40" />
-        <div className="absolute bottom-10 right-10 h-80 w-80 rounded-full bg-pink-100/70 blur-3xl dark:bg-pink-900/40" />
-      </div>
-      <div className="relative flex min-h-screen">
+    <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900">
+        {/* Sidebar — desktop only, unchanged on mobile */}
         <Sidebar
           activeView={activeView}
           onNavigate={navigateTo}
@@ -1518,329 +1603,247 @@ function App() {
           branding={branding}
           onLogout={confirmLogout}
           allowedViews={normalizedAllowedViews}
+          sidebarOpen={sidebarOpen}
+          onCloseSidebar={() => setSidebarOpen(false)}
         />
-        <div className="flex flex-1 flex-col">
+        <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
+          {/* Mobile nav — unchanged */}
           <MobileNav
             activeView={activeView}
             onNavigate={navigateTo}
             branding={branding}
             allowedViews={normalizedAllowedViews}
           />
-          <main className="flex-1 px-4 py-6 transition-colors duration-300 sm:px-6 lg:px-8">
-            <div className="mb-6 rounded-3xl border border-white/70 bg-white/95 px-5 py-5 shadow-2xl shadow-indigo-100/60 backdrop-blur transition-colors duration-300 dark:border-gray-800/80 dark:bg-gray-900/80 dark:shadow-black/40">
-              <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 transition-colors duration-300 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow dark:bg-indigo-500">
-                    <LucideIcon name="GraduationCap" className="h-5 w-5" />
-                  </div>
-                  <div>
-                    {/* <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
-                     Welcome 
-                    </p> */}
-                    <h1 className="text-lg font-semibold text-slate-900 uppercase">Welcome Admin </h1>
-                    
-                  </div>
-                </div>
-                <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-                  {/* <div className="relative w-full max-w-sm">
-                    <LucideIcon
-                      name="Search"
-                      className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-                    />
-                    <input
-                      type="search"
-                      placeholder="Search students, seats, payments..."
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100"
-                    />
-                  </div> */}
-                    <div className="flex items-center gap-2">
-                      <div className="relative" ref={notificationRef}>
+
+          {/* Desktop top bar — lg only */}
+          <header className="hidden lg:flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3 shadow-sm flex-shrink-0 gap-3">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setSidebarOpen((o) => !o)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+                aria-label="Toggle sidebar"
+              >
+                <PhosphorIcon name="List" size={20} weight="bold" />
+              </button>
+              <h1 className="text-base font-semibold text-slate-800">
+                Welcome {userType === "coordinator" ? "Coordinator" : "Admin"}!
+              </h1>
+            </div>
+            <div className="flex items-center gap-3">
+              <p className="text-xs text-slate-400">{new Date().toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })}</p>
+              {/* Notification bell */}
+              <div className="relative" ref={notificationRef}>
+                <button
+                  type="button"
+                  onClick={() => setNotificationOpen((prev) => !prev)}
+                  className={`flex h-8 w-8 items-center justify-center rounded-full border bg-white text-slate-500 transition-colors duration-200 ${
+                    notificationOpen
+                      ? "border-indigo-100 text-indigo-600"
+                      : "border-slate-200 hover:border-indigo-100 hover:text-indigo-600"
+                  }`}
+                  aria-haspopup="true"
+                  aria-expanded={notificationOpen}
+                >
+                  <PhosphorIcon name="Bell" size={16} weight={notifications.length ? "fill" : "regular"} />
+                  {notifications.length ? (
+                    <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold text-white">
+                      {Math.min(notifications.length, 9)}
+                    </span>
+                  ) : null}
+                </button>
+                {notificationOpen ? (
+                  <div className="absolute right-0 top-11 z-40 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                    {/* Header */}
+                    <div className="flex items-center justify-between bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <PhosphorIcon name="Bell" size={14} weight="fill" className="text-indigo-200" />
+                        <p className="text-sm font-semibold text-white">Notifications</p>
+                        {notifications.length > 0 && (
+                          <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                            {notifications.length}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {backendNotifications.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleMarkAllNotifsRead}
+                            className="text-[11px] font-semibold text-indigo-200 hover:text-white transition-colors"
+                          >
+                            Mark all read
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => setNotificationOpen((prev) => !prev)}
-                          className={`rounded-2xl border border-slate-200 bg-white/80 p-2 text-slate-500 transition-colors duration-200 dark:border-gray-700 dark:bg-gray-900/60 dark:text-slate-300 ${
-                            notificationOpen
-                              ? "border-indigo-200 text-indigo-600 dark:border-indigo-500 dark:text-indigo-200"
-                              : "hover:border-indigo-200 hover:text-indigo-600 dark:hover:border-indigo-500 dark:hover:text-indigo-200"
-                          }`}
-                          aria-haspopup="true"
-                          aria-expanded={notificationOpen}
+                          onClick={() => setNotificationOpen(false)}
+                          className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/30 transition-colors"
                         >
-                        <LucideIcon name="Bell" className="h-4.5 w-4.5" />
-                        {notifications.length ? (
-                          <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold text-white">
-                            {Math.min(notifications.length, 9)}
-                          </span>
-                        ) : null}
-                      </button>
-                      {notificationOpen ? (
-                        <div className="absolute right-0 top-12 z-40 w-80 rounded-3xl border border-slate-100 bg-white/95 shadow-2xl shadow-indigo-200/50 backdrop-blur dark:border-gray-800 dark:bg-gray-900">
-                          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-gray-800">
-                            <div>
-                              <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                                Notifications
-                              </p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {notifications.length} total alerts
-                                {backendNotifications.length > 0 && (
-                                  <span className="ml-1 text-indigo-500 font-semibold">
-                                    · {backendNotifications.length} new
-                                  </span>
-                                )}
-                              </p>
-                            </div>
-                            <div className="flex gap-2">
-                              {backendNotifications.length > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={handleMarkAllNotifsRead}
-                                  className="text-xs font-semibold text-indigo-500 hover:text-indigo-700"
-                                >
-                                  Mark all read
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => setNotificationOpen(false)}
-                                className="text-xs font-semibold text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-white"
-                              >
-                                Close
-                              </button>
-                            </div>
-                          </div>
-                          <div className="flex gap-2 overflow-x-auto px-4 py-2">
-                            {notificationTabs.map((tab) => (
-                              <button
-                                key={tab.key}
-                                type="button"
-                                onClick={() => setNotificationFilter(tab.key)}
-                                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                                  notificationFilter === tab.key
-                                    ? "bg-indigo-600 text-white dark:bg-indigo-500/80"
-                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-slate-300 dark:hover:bg-gray-700"
-                                }`}
-                              >
-                                {tab.label}
-                              </button>
-                            ))}
-                          </div>
-                          <div className="max-h-80 overflow-y-auto px-2 py-2">
-                            {filteredNotifications.length === 0 ? (
-                              <p className="px-4 py-6 text-center text-xs text-slate-500 dark:text-slate-400">
-                                No notifications in this category.
-                              </p>
-                            ) : (
-                              filteredNotifications.map((notification) => (
-                                <div
-                                  key={notification.id}
-                                  className={`flex items-start gap-3 rounded-2xl px-4 py-3 text-sm transition-colors duration-200 hover:bg-slate-50 dark:hover:bg-gray-800 ${
-                                    notification._backendId ? "cursor-pointer" : ""
-                                  }`}
-                                  onClick={() => {
-                                    if (notification._backendId) {
-                                      handleMarkBackendNotifRead(notification._backendId);
-                                      // Navigate to students view to see the new signup
-                                      if (notification.category === "admission") {
-                                        navigateTo("students");
-                                        setNotificationOpen(false);
-                                      }
-                                    }
-                                  }}
-                                >
-                                  <span
-                                    className={`mt-1 inline-flex h-8 w-8 items-center justify-center rounded-2xl text-white ${
-                                      notification.tone === "success"
-                                        ? "bg-emerald-500"
-                                        : notification.tone === "warning"
-                                        ? "bg-amber-500"
-                                        : notification.tone === "alert"
-                                        ? "bg-rose-500"
-                                        : "bg-slate-500"
-                                    }`}
-                                  >
-                                    <LucideIcon
-                                      name={
-                                        notification.category === "approval"
-                                          ? "BadgeAlert"
-                                          : notification.category === "renewal"
-                                          ? "CalendarClock"
-                                          : notification.category === "payment"
-                                          ? "CreditCard"
-                                          : notification.category === "seat"
-                                          ? "Armchair"
-                                          : notification.category === "admission"
-                                          ? "QrCode"
-                                          : "AlertCircle"
-                                      }
-                                      className="h-4 w-4"
-                                    />
-                                  </span>
-                                  <div className="flex flex-1 flex-col">
-                                    <p className="font-semibold text-slate-900 dark:text-white">
-                                      {notification.title}
-                                    </p>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                                      {notification.message}
-                                    </p>
-                                    <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                                      {formatRelativeTime(notification.date)}
-                                    </p>
-                                    {notification.category === "approval" &&
-                                    notification.pendingPaymentId ? (
-                                      <div className="mt-2 flex gap-2">
-                                        <button
-                                          type="button"
-                                          onClick={(event) => {
-                                            event.stopPropagation();
-                                            handleApprovePendingPayment(
-                                              notification.pendingPaymentId
-                                            );
-                                          }}
-                                          className="inline-flex items-center rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-emerald-500"
-                                        >
-                                          Approve
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={(event) => {
-                                            event.stopPropagation();
-                                            handleRejectPendingPayment(
-                                              notification.pendingPaymentId
-                                            );
-                                          }}
-                                          className="inline-flex items-center rounded-lg border border-rose-200 px-2.5 py-1 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50"
-                                        >
-                                          Reject
-                                        </button>
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                          <div className="border-t border-slate-100 px-4 py-2 text-center text-xs text-slate-500 dark:border-gray-800 dark:text-slate-400">
-                            Alerts refresh automatically
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={toggleTheme}
-                      className="rounded-2xl border border-slate-200 p-2 text-slate-500 transition hover:border-indigo-200 hover:text-indigo-600 dark:border-slate-700 dark:text-slate-300 dark:hover:border-indigo-500 dark:hover:text-indigo-300"
-                      aria-label="Toggle theme"
-                    >
-                      <LucideIcon
-                        name={theme === "dark" ? "Sun" : "Moon"}
-                        className="h-4.5 w-4.5"
-                      />
-                    </button>
-                    {/* <button className="rounded-2xl border border-slate-200 p-2 text-slate-500 transition hover:border-indigo-200 hover:text-indigo-600">
-                      <LucideIcon name="Settings2" className="h-4.5 w-4.5" />
-                    </button> */}
-                    <div className="flex items-center gap-2 rounded-2xl border border-slate-200 px-3 py-1.5 transition-colors duration-200 dark:border-gray-700 dark:bg-gray-900/40">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white dark:bg-gray-700">
-                        {(admin?.name || admin?.email || "AA").charAt(0).toUpperCase()}
+                          <PhosphorIcon name="X" size={11} weight="bold" />
+                        </button>
                       </div>
-                      {/* <div className="hidden text-left text-xs font-medium text-slate-500 sm:block">
-                        <p className="text-slate-900">{admin?.name || "Admin"}</p>
-                        <p className="text-[10px] uppercase tracking-wide">
-                          {admin?.email || "admin@abhyasika.co"}
-                        </p>
-                      </div> */}
                     </div>
-                    <button
-                      onClick={confirmLogout}
-                      className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:text-slate-300 dark:hover:border-rose-500 dark:hover:bg-rose-500/10 dark:hover:text-rose-200"
-                    >
-                      <LucideIcon name="Power" className="h-4.5 w-4.5" />
-                     
-                    </button>
+
+                    {/* Filter tabs */}
+                    <div className="flex gap-1.5 overflow-x-auto bg-slate-50 px-3 py-2 scrollbar-none">
+                      {notificationTabs.map((tab) => (
+                        <button
+                          key={tab.key}
+                          type="button"
+                          onClick={() => setNotificationFilter(tab.key)}
+                          className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                            notificationFilter === tab.key
+                              ? "bg-indigo-600 text-white shadow-sm"
+                              : "bg-white text-slate-500 border border-slate-200 hover:border-indigo-200 hover:text-indigo-600"
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Notification list */}
+                    <div className="max-h-72 overflow-y-auto divide-y divide-slate-50">
+                      {filteredNotifications.length === 0 ? (
+                        <div className="flex flex-col items-center gap-2 py-8 text-center">
+                          <PhosphorIcon name="BellSlash" size={28} weight="duotone" className="text-slate-300" />
+                          <p className="text-xs text-slate-400">No notifications here.</p>
+                        </div>
+                      ) : (
+                        filteredNotifications.map((notification) => (
+                          <div
+                            key={notification.id}
+                            className={`flex items-start gap-3 px-3 py-2.5 transition-colors duration-150 hover:bg-slate-50 ${
+                              notification._backendId ? "cursor-pointer" : ""
+                            }`}
+                            onClick={() => {
+                              if (notification._backendId) {
+                                handleMarkBackendNotifRead(notification._backendId);
+                                if (notification.category === "admission") {
+                                  navigateTo("students");
+                                  setNotificationOpen(false);
+                                }
+                              }
+                            }}
+                          >
+                            {/* Icon */}
+                            <span
+                              className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                                notification.tone === "success"
+                                  ? "bg-emerald-100 text-emerald-600"
+                                  : notification.tone === "warning"
+                                  ? "bg-amber-100 text-amber-600"
+                                  : notification.tone === "alert"
+                                  ? "bg-rose-100 text-rose-600"
+                                  : "bg-indigo-100 text-indigo-600"
+                              }`}
+                            >
+                              <PhosphorIcon
+                                name={
+                                  notification.category === "approval"
+                                    ? "ShieldWarning"
+                                    : notification.category === "renewal"
+                                    ? "CalendarCheck"
+                                    : notification.category === "payment"
+                                    ? "CreditCard"
+                                    : notification.category === "seat"
+                                    ? "Armchair"
+                                    : notification.category === "admission"
+                                    ? "QrCode"
+                                    : "Warning"
+                                }
+                                size={13}
+                                weight="fill"
+                              />
+                            </span>
+
+                            {/* Content */}
+                            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                              <div className="flex items-baseline justify-between gap-2">
+                                <p className="truncate text-xs font-semibold text-slate-800">
+                                  {notification.title}
+                                </p>
+                                <span className="shrink-0 text-[10px] text-slate-400">
+                                  {formatRelativeTime(notification.date)}
+                                </span>
+                              </div>
+                              <p className="text-[11px] leading-snug text-slate-500 line-clamp-2">
+                                {notification.message}
+                              </p>
+                              {notification.category === "approval" && notification.pendingPaymentId ? (
+                                <div className="mt-1.5 flex gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      handleApprovePendingPayment(notification.pendingPaymentId);
+                                    }}
+                                    className="inline-flex items-center rounded-md bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white transition hover:bg-emerald-500"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      handleRejectPendingPayment(notification.pendingPaymentId);
+                                    }}
+                                    className="inline-flex items-center rounded-md border border-rose-200 px-2 py-0.5 text-[10px] font-semibold text-rose-600 transition hover:bg-rose-50"
+                                  >
+                                    Reject
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="border-t border-slate-100 bg-slate-50 px-4 py-1.5 text-center text-[10px] text-slate-400">
+                      Alerts refresh automatically
+                    </div>
                   </div>
-                </div>
+                ) : null}
               </div>
-              {/* <div className="flex flex-col gap-4 py-4 text-sm text-slate-500 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-400">
-                    Welcome to Abhyasika
-                  </p>
-                  <p className="text-base font-semibold text-slate-900">{activeViewLabel}</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => openModal("createStudent")}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-slate-900/30 transition hover:-translate-y-0.5"
-                  >
-                    <LucideIcon name="UserPlus2" className="h-4 w-4" />
-                    Add student
-                  </button>
-                  <button
-                    onClick={() => openModal("logPayment")}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-indigo-200 hover:text-indigo-600"
-                  >
-                    <LucideIcon name="CreditCard" className="h-4 w-4" />
-                    Quick payment
-                  </button>
-                  <button
-                    onClick={() => setActiveView("expenses")}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-emerald-200 hover:text-emerald-600"
-                  >
-                    <LucideIcon name="Wallet2" className="h-4 w-4" />
-                    Expenses desk
-                  </button>
-                  <button
-                    onClick={() => setActiveView("reports")}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-sky-200 hover:text-sky-600"
-                  >
-                    <LucideIcon name="BarChart3" className="h-4 w-4" />
-                    Reports hub
-                  </button>
-                  <button
-                    onClick={() => setActiveView("admissions")}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-indigo-200 hover:text-indigo-600"
-                  >
-                    <LucideIcon name="QrCode" className="h-4 w-4" />
-                    Admissions QR
-                  </button>
-                  <button
-                    onClick={confirmLogout}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-                  >
-                    <LucideIcon name="Power" className="h-4 w-4" />
-                    Log out
-                  </button>
-                </div>
-              </div> */}
-              <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+
+              {/* User avatar */}
+              <div className="flex h-8 w-8 -ml-1 items-center justify-center rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 text-sm font-semibold text-white">
+                {(admin?.name || admin?.email || "A").charAt(0).toUpperCase()}
+              </div>
+            </div>
+          </header>
+
+          <main className="flex-1 overflow-y-auto px-4 py-5 sm:px-5 lg:px-6">
+            {/* Stats cards — desktop only, dashboard view only */}
+            {activeView === "dashboard" && (
+              <div className="hidden lg:grid mb-5 gap-3 grid-cols-2 xl:grid-cols-4">
                 {headerHighlights.map((stat) => (
                   <div
                     key={stat.label}
-                    className="rounded-2xl border border-slate-100 bg-white/90 p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800/80"
+                    className={`flex items-center justify-between rounded-xl border px-4 py-3 ${stat.bg} ${stat.border} transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm`}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900/5 text-slate-700 dark:bg-gray-900 dark:text-indigo-200">
-                        <LucideIcon name={stat.icon} className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-400">
-                          {stat.label}
-                        </p>
-                        <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                          {stat.value}
-                        </p>
-                      </div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] uppercase tracking-wide text-slate-500 font-medium truncate">
+                        {stat.label}
+                      </p>
+                      <p className={`text-2xl font-bold truncate ${stat.valueColor}`}>
+                        {stat.value}
+                      </p>
+                    </div>
+                    <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${stat.iconBg} ${stat.iconColor}`}>
+                      <PhosphorIcon name={stat.phosphorIcon} size={18} weight="duotone" />
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
+            )}
             {renderContent()}
           </main>
         </div>
         {renderModal()}
         {toastContainer}
-      </div>
     </div>
   );
 }

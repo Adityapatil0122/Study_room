@@ -146,8 +146,8 @@ export async function createStudent(workspaceOwnerId, payload, audit = null, con
         {
           workspaceOwnerId,
           type: "student-registered",
-          title: "New student registration",
-          message: `${name}${payload.phone ? ` (${payload.phone})` : ""} just registered${
+          title: "New user created",
+          message: `${name}${payload.phone ? ` (${payload.phone})` : ""} created a student account${
             Number(payload.deposit_amount)
               ? ` with deposit ₹${Number(payload.deposit_amount)}`
               : ""

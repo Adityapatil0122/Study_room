@@ -134,7 +134,7 @@ function PlanModal({ open, onClose, plan, onSubmit, isSystem = false }) {
                       }
                       className={`rounded-lg border px-2 py-1 text-xs font-semibold transition ${
                         active
-                          ? "border-indigo-500 bg-indigo-600 text-white"
+                          ? "btn-gradient-primary border-indigo-500"
                           : "border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50 dark:border-gray-600 dark:text-slate-300"
                       }`}
                     >
@@ -203,7 +203,7 @@ function PlanModal({ open, onClose, plan, onSubmit, isSystem = false }) {
           <button
             type="submit"
             disabled={saving}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-60"
+            className="btn-gradient-primary inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold"
           >
             {saving ? (
               <>

@@ -37,6 +37,8 @@ export async function requireAuth(req, _res, next) {
   req.token = token;
   req.auth = {
     admin,
+    adminId: admin.id,
+    role: admin.role?.name ?? (admin.is_owner ? "Admin" : "Team"),
     workspaceOwnerId: admin.owner_id || admin.id,
   };
   req.user = buildSessionUser(admin);

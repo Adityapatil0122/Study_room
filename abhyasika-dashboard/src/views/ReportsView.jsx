@@ -277,48 +277,49 @@ function ReportsView({
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-slate-400">
-            Seats Occupied
-          </p>
-          <p className="mt-2 text-3xl font-semibold text-slate-900">
-            {summary.occupiedCount}
-          </p>
-          <p className="text-xs text-slate-500">
-            Out of {totalSeats} total seats
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-slate-400">
-            Seats Available
-          </p>
-          <p className="mt-2 text-3xl font-semibold text-slate-900">
-            {summary.availableCount}
-          </p>
-          <p className="text-xs text-slate-500">Ready to be assigned</p>
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-slate-400">
-            Collections
-          </p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">
-            {formatCurrency(summary.totalCollections)}
-          </p>
-          <p className="text-xs text-slate-500">
-            Across {collectionRows.length} payments
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-slate-400">
-            Expenses
-          </p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">
-            {formatCurrency(summary.totalExpenses)}
-          </p>
-          <p className="text-xs text-slate-500">
-            Across {expenseRows.length} entries
-          </p>
-        </div>
+        {[
+          {
+            label: "Seats Occupied",
+            value: summary.occupiedCount,
+            sub: `Out of ${totalSeats} total seats`,
+            bg: "bg-emerald-50",
+            text: "text-emerald-700",
+          },
+          {
+            label: "Seats Available",
+            value: summary.availableCount,
+            sub: "Ready to be assigned",
+            bg: "bg-indigo-50",
+            text: "text-indigo-700",
+          },
+          {
+            label: "Collections",
+            value: formatCurrency(summary.totalCollections),
+            sub: `Across ${collectionRows.length} payments`,
+            bg: "bg-amber-50",
+            text: "text-amber-700",
+          },
+          {
+            label: "Expenses",
+            value: formatCurrency(summary.totalExpenses),
+            sub: `Across ${expenseRows.length} entries`,
+            bg: "bg-rose-50",
+            text: "text-rose-700",
+          },
+        ].map((card) => (
+          <div
+            key={card.label}
+            className={`rounded-2xl border border-slate-100 p-4 shadow-sm ${card.bg}`}
+          >
+            <p className="text-xs uppercase tracking-wide text-slate-500">
+              {card.label}
+            </p>
+            <p className={`mt-2 text-2xl font-semibold ${card.text}`}>
+              {card.value}
+            </p>
+            <p className="text-xs text-slate-500">{card.sub}</p>
+          </div>
+        ))}
       </div>
 
       <section className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm">

@@ -78,8 +78,8 @@ export const postRequestQrPayment = asyncHandler(async (req, res) => {
 });
 
 export const getAvailableSeats = asyncHandler(async (req, res) => {
-  const { workspaceOwnerId } = req.studentAuth;
-  const data = await listSeatsForStudent(workspaceOwnerId);
+  const { studentId, workspaceOwnerId } = req.studentAuth;
+  const data = await listSeatsForStudent(studentId, workspaceOwnerId);
   res.json({ data });
 });
 

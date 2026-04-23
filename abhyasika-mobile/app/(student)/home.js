@@ -218,8 +218,8 @@ export default function StudentHomeScreen() {
                             </View>
                         ) : null}
 
-                        {/* Select Seat button — shown when paid but no seat */}
-                        {subscription?.plan && !subscription?.seat ? (
+                        {/* Select Seat button - shown when admin enabled self-selection */}
+                        {subscription?.seat_selection_allowed ? (
                             <TouchableOpacity
                                 onPress={() => router.push("/(student)/seat-select")}
                                 className="bg-emerald-600 rounded-xl p-5 mt-4 flex-row items-center justify-between"

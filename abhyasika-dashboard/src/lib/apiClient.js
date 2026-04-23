@@ -79,6 +79,95 @@ export function createApiClient() {
       return data?.session ?? null;
     },
 
+    async studentRegister(payload) {
+      const data = await request("/student-auth/register", {
+        method: "POST",
+        body: payload,
+        auth: false,
+      });
+      return data?.session ?? null;
+    },
+
+    async studentLogin(email, password) {
+      const data = await request("/student-auth/login", {
+        method: "POST",
+        body: { email, password },
+        auth: false,
+      });
+      return data?.session ?? null;
+    },
+
+    async getStudentSession() {
+      const data = await request("/student-auth/me");
+      return data?.session ?? null;
+    },
+
+    async getStudentProfile() {
+      return request("/student/profile");
+    },
+
+    async updateStudentProfile(updates) {
+      return request("/student/profile", {
+        method: "PUT",
+        body: updates,
+      });
+    },
+
+    async listStudentPlans() {
+      return asArray(await request("/student/plans"), ["plans"]);
+    },
+
+    async getStudentSubscription() {
+      return request("/student/subscription");
+    },
+
+    async listMyPayments() {
+      return request("/student/payments");
+    },
+
+    async requestQrPayment(payload) {
+      return request("/student/payments/request-qr", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
+    async createScheduledOrder(payload) {
+      return request("/student/payments/scheduled-order", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
+    async verifyScheduledPayment(payload) {
+      return request("/student/payments/scheduled-verify", {
+        method: "POST",
+        body: payload,
+      });
+    },
+
+    async listAvailableSeats() {
+      return asArray(await request("/student/seats"), ["seats"]);
+    },
+
+    async selectSeat(seatId) {
+      return request("/student/seats/select", {
+        method: "POST",
+        body: { seat_id: seatId },
+      });
+    },
+
+    async uploadAadhaarFile(file) {
+      const formData = new FormData();
+      formData.append("file", file);
+      return request("/student-auth/upload-id-proof", {
+        method: "POST",
+        body: formData,
+        isForm: true,
+        auth: false,
+      });
+    },
+
     async listRoles() {
       return asArray(await request("/admin/roles"), ["roles"]);
     },

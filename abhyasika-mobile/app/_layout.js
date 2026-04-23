@@ -111,7 +111,7 @@ const InitialLayout = () => {
             return;
         }
 
-        if (userType === "admin") {
+        if (userType === "admin" || userType === "coordinator") {
             if (!inAdminGroup) router.replace("/(app)/dashboard");
         } else if (userType === "student") {
             if (!inStudentGroup) router.replace("/(student)/home");

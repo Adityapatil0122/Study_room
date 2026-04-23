@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import jsPDF from "jspdf";
+import LucideIcon from "../components/icons/LucideIcon.jsx";
 
 const STATUS_STYLES = {
   available:
@@ -168,8 +169,8 @@ function SeatManagerView({ seats, students, onOpenModal }) {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-100 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 shadow-sm">
-        <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="rounded-2xl border border-slate-100 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 shadow-sm">
+        <div className="grid grid-cols-3 gap-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
           {sortedSeats.map((seat) => {
             const occupant = studentMap.get(seat.current_student_id);
             const renewalAlert =
@@ -185,33 +186,38 @@ function SeatManagerView({ seats, students, onOpenModal }) {
                     { seat, student: occupant }
                   )
                 }
-                className={`flex flex-col items-start rounded-2xl border px-4 py-4 text-left shadow-sm transition focus:outline-none ${
+                className={`flex min-h-[74px] flex-col items-start rounded-lg border px-2.5 py-2 text-left shadow-sm transition focus:outline-none ${
                   STATUS_STYLES[seat.status] ?? ""
                 } ${renewalAlert?.accent ?? "focus:ring-2 focus:ring-indigo-200"}`}
               >
                 <div className="flex w-full items-center justify-between">
-                  <span className="text-sm font-semibold uppercase tracking-wide text-slate-900 dark:text-slate-100">
-                    {seat.seat_number}
-                  </span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md bg-white/70 text-current shadow-sm">
+                      <LucideIcon name="Armchair" className="h-3 w-3" />
+                    </span>
+                    <span className="truncate text-xs font-semibold uppercase tracking-wide text-slate-900 dark:text-slate-100">
+                      {seat.seat_number}
+                    </span>
+                  </div>
+                  <div className="flex min-w-0 items-center gap-1">
                     {renewalAlert ? (
                       <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${renewalAlert.tone}`}
+                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${renewalAlert.tone}`}
                       >
                         {renewalAlert.label}
                       </span>
                     ) : null}
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-700 dark:text-slate-200">
+                    <span className="truncate text-[9px] font-semibold uppercase tracking-wide text-slate-700 dark:text-slate-200">
                       {seat.status}
                     </span>
                   </div>
                 </div>
-                <div className="mt-3 text-sm text-slate-700 dark:text-slate-200">
+                <div className="mt-1.5 text-xs text-slate-700 dark:text-slate-200">
                   {seat.status === "occupied" ? (
                     <>
-                      <p className="font-semibold">{occupant?.name}</p>
-                      <p className="text-xs text-slate-600 dark:text-slate-400">
-                        Renewal:{" "}
+                      <p className="line-clamp-1 font-semibold">{occupant?.name}</p>
+                      <p className="text-[10px] text-slate-600 dark:text-slate-400">
+                        Ren:{" "}
                         {occupant?.renewal_date
                           ? new Date(
                               occupant.renewal_date
