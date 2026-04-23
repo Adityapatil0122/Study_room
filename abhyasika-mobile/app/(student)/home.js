@@ -15,6 +15,9 @@ import { StatusBar } from "expo-status-bar";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useAuth } from "../../context/AuthContext";
 
+const INDIGO = "#4f46e5";
+const BG     = "#f4f5fb";
+
 export default function StudentHomeScreen() {
     const { student, api, logout } = useAuth();
     const router = useRouter();
@@ -23,7 +26,6 @@ export default function StudentHomeScreen() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState("");
-    // Track previous pending_qr so we can detect when admin approves it
     const prevPendingQrRef = useRef(undefined);
 
     const load = useCallback(async () => {
@@ -34,10 +36,8 @@ export default function StudentHomeScreen() {
                 api.listMyPayments(),
             ]);
 
-            // Detect QR payment approval: was pending before, now it's gone and plan is active
             const wasPending = prevPendingQrRef.current !== undefined
-                ? Boolean(prevPendingQrRef.current)
-                : false;
+                ? Boolean(prevPendingQrRef.current) : false;
             const isNowApproved = wasPending && !sub?.pending_qr && sub?.plan;
             if (isNowApproved) {
                 Toast.show({
@@ -48,22 +48,19 @@ export default function StudentHomeScreen() {
                 });
             }
             prevPendingQrRef.current = sub?.pending_qr ?? null;
-
             setSubscription(sub);
-            // listMyPayments returns { all: [...], online: [...] } or a flat array
-            // Merge offline (all) and online payments, sort newest first
+
             let allPays;
             if (Array.isArray(pays)) {
                 allPays = pays;
             } else {
                 const offline = Array.isArray(pays?.all) ? pays.all : [];
-                const online = Array.isArray(pays?.online) ? pays.online : [];
-                const merged = [...offline, ...online];
-                merged.sort((a, b) => {
-                    const dateA = new Date(a.payment_date ?? a.created_at ?? 0).getTime();
-                    const dateB = new Date(b.payment_date ?? b.created_at ?? 0).getTime();
-                    return dateB - dateA;
-                });
+                const online  = Array.isArray(pays?.online) ? pays.online : [];
+                const merged  = [...offline, ...online];
+                merged.sort((a, b) =>
+                    new Date(b.payment_date ?? b.created_at ?? 0) -
+                    new Date(a.payment_date ?? a.created_at ?? 0)
+                );
                 allPays = merged;
             }
             setPayments(allPays.slice(0, 5));
@@ -75,231 +72,245 @@ export default function StudentHomeScreen() {
         }
     }, [api]);
 
-    // Reload fresh data every time this screen comes into focus
-    // (e.g. returning from pay / receipt screens after a successful payment)
+    const isFirstLoad = useRef(true);
     useFocusEffect(
         useCallback(() => {
-            setLoading(true);
+            if (isFirstLoad.current) {
+                isFirstLoad.current = false;
+                setLoading(true);
+            }
             load();
         }, [load])
     );
 
-    const onRefresh = () => {
-        setRefreshing(true);
-        load();
-    };
+    const onRefresh = () => { setRefreshing(true); load(); };
 
-    const handleLogout = () => {
-        Alert.alert(
-            "Logout",
-            "Are you sure you want to log out?",
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "Logout", style: "destructive", onPress: () => {
-                        Toast.show({
-                            type: "info",
-                            text1: "Logged out",
-                            text2: "See you soon! 👋",
-                            visibilityTime: 2000,
-                        });
-                        logout();
-                    }
+    const handleLogout = () =>
+        Alert.alert("Logout", "Are you sure you want to log out?", [
+            { text: "Cancel", style: "cancel" },
+            {
+                text: "Logout", style: "destructive", onPress: () => {
+                    Toast.show({ type: "info", text1: "Logged out", text2: "See you soon! 👋", visibilityTime: 2000 });
+                    logout();
                 },
-            ]
-        );
-    };
+            },
+        ]);
 
     return (
-        <SafeAreaView className="flex-1 bg-gray-50">
+        <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
             <StatusBar style="dark" />
             <ScrollView
-                refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-                }
-                contentContainerStyle={{ padding: 16 }}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={INDIGO} />}
+                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 36 }}
+                showsVerticalScrollIndicator={false}
             >
-                <View className="flex-row justify-between items-center mb-6 mt-2">
-                    <View className="flex-row items-center">
-                        <Image 
-                            source={require('../../assets/logo.png')} 
-                            className="w-12 h-12 rounded-full mr-3 border border-gray-200" 
-                            resizeMode="contain" 
-                        />
+                {/* ── Header ── */}
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 20, marginBottom: 22 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center" }}>
+                        <View style={{
+                            width: 50, height: 50, borderRadius: 25,
+                            backgroundColor: "#fff", borderWidth: 2, borderColor: "#e0e2f7",
+                            alignItems: "center", justifyContent: "center",
+                            overflow: "hidden", marginRight: 12,
+                            shadowColor: INDIGO, shadowOpacity: 0.1, shadowRadius: 6, elevation: 2,
+                        }}>
+                            <Image source={require("../../assets/logo.png")} style={{ width: 38, height: 38 }} resizeMode="contain" />
+                        </View>
                         <View>
-                            <Text className="text-gray-500">Welcome back,</Text>
-                            <Text className="text-2xl font-bold text-gray-900">
+                            <Text style={{ fontSize: 12, color: "#9ca3af", fontWeight: "500", letterSpacing: 0.3 }}>Welcome back,</Text>
+                            <Text style={{ fontSize: 22, fontWeight: "800", color: "#111827", letterSpacing: -0.3 }}>
                                 {student?.name ?? "Student"}
                             </Text>
                         </View>
                     </View>
                     <TouchableOpacity
                         onPress={handleLogout}
-                        className="px-3 py-2 border border-gray-300 rounded-lg"
+                        style={{
+                            paddingHorizontal: 14, paddingVertical: 8,
+                            borderRadius: 10, borderWidth: 1.5, borderColor: "#e5e7eb",
+                            backgroundColor: "#fff",
+                        }}
                     >
-                        <Text className="text-gray-700 text-sm">Logout</Text>
+                        <Text style={{ color: "#6b7280", fontSize: 13, fontWeight: "600" }}>Logout</Text>
                     </TouchableOpacity>
                 </View>
 
                 {loading ? (
-                    <ActivityIndicator size="large" color="#4f46e5" className="mt-10" />
+                    <ActivityIndicator size="large" color={INDIGO} style={{ marginTop: 60 }} />
                 ) : (
                     <>
                         {error ? (
-                            <View className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-                                <Text className="text-red-600 text-sm">{error}</Text>
+                            <View style={[banner, { borderLeftColor: "#ef4444", backgroundColor: "#fff5f5" }]}>
+                                <Text style={{ color: "#ef4444", fontSize: 13, fontWeight: "600" }}>{error}</Text>
                             </View>
                         ) : null}
 
                         <SubscriptionCard subscription={subscription} />
 
-                        {/* Membership On-Hold banner */}
+                        {/* On-hold */}
                         {subscription?.membership_status === "on_hold" ? (
-                            <View className="bg-amber-50 border border-amber-300 rounded-xl p-4 mt-4">
-                                <Text className="text-amber-700 font-bold text-sm mb-1">
-                                    ⏸ Membership On Hold
-                                </Text>
-                                <Text className="text-amber-600 text-xs">
+                            <View style={[banner, { borderLeftColor: "#f59e0b", backgroundColor: "#fffbeb" }]}>
+                                <Text style={[bannerTitle, { color: "#b45309" }]}>⏸  Membership On Hold</Text>
+                                <Text style={[bannerBody, { color: "#92400e" }]}>
                                     Your membership is paused since{" "}
                                     {subscription.hold_start
                                         ? new Date(subscription.hold_start).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
                                         : "recently"}.
-                                </Text>
-                                <Text className="text-amber-500 text-xs mt-1">
-                                    Your renewal date is frozen. When you return, the days you were away will be added back.
+                                    Days away will be added back when you return.
                                 </Text>
                             </View>
                         ) : null}
 
-                        {/* Scheduled payment request from admin */}
+                        {/* Scheduled payment request */}
                         {subscription?.scheduled_request && subscription?.membership_status !== "on_hold" ? (
-                            <View className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 mt-4">
-                                <Text className="text-indigo-700 font-bold text-sm mb-1">
-                                    📋 Payment Request from Admin
-                                </Text>
-                                <Text className="text-indigo-800 text-sm">
+                            <View style={[banner, { borderLeftColor: INDIGO, backgroundColor: "#eef2ff" }]}>
+                                <Text style={[bannerTitle, { color: "#4338ca" }]}>📋  Payment Request from Admin</Text>
+                                <Text style={{ color: "#4338ca", fontSize: 15, fontWeight: "700", marginTop: 2 }}>
                                     ₹{Number(subscription.scheduled_request.amount).toLocaleString("en-IN")}
-                                    {" "}— {subscription.scheduled_request.type === "half_month" ? "15-Day Lumpsum" : "Custom Amount"}
+                                    {"  ·  "}
+                                    {subscription.scheduled_request.type === "half_month" ? "15-Day Lumpsum" : "Custom Amount"}
                                 </Text>
-                                <Text className="text-indigo-600 text-xs mt-0.5">
+                                <Text style={[bannerBody, { color: "#6366f1" }]}>
                                     {subscription.scheduled_request.valid_from} → {subscription.scheduled_request.valid_until}
                                 </Text>
                                 {subscription.scheduled_request.notes ? (
-                                    <Text className="text-indigo-500 text-xs mt-1 italic">
+                                    <Text style={{ color: "#818cf8", fontSize: 12, fontStyle: "italic", marginTop: 3 }}>
                                         "{subscription.scheduled_request.notes}"
                                     </Text>
                                 ) : null}
                                 <TouchableOpacity
                                     onPress={() => router.push("/(student)/pay")}
-                                    className="mt-3 bg-indigo-600 rounded-lg py-2 items-center"
+                                    style={{
+                                        marginTop: 12, backgroundColor: INDIGO,
+                                        borderRadius: 10, paddingVertical: 11, alignItems: "center",
+                                        shadowColor: INDIGO, shadowOpacity: 0.25, shadowRadius: 6, elevation: 3,
+                                    }}
                                 >
-                                    <Text className="text-white font-bold text-sm">Pay Now →</Text>
+                                    <Text style={{ color: "#fff", fontWeight: "700", fontSize: 14 }}>Pay Now →</Text>
                                 </TouchableOpacity>
                             </View>
                         ) : null}
 
-                        {/* Pending QR payment badge */}
+                        {/* Pending QR */}
                         {subscription?.pending_qr ? (
-                            <View className="bg-amber-50 border border-amber-300 rounded-xl p-4 mt-4">
-                                <View className="flex-row items-center mb-1">
-                                    <Text className="text-amber-700 font-bold text-sm">
-                                        ⏳ Payment Pending Approval
-                                    </Text>
-                                </View>
-                                <Text className="text-amber-600 text-xs">
+                            <View style={[banner, { borderLeftColor: "#f59e0b", backgroundColor: "#fffbeb" }]}>
+                                <Text style={[bannerTitle, { color: "#b45309" }]}>⏳  Payment Pending Approval</Text>
+                                <Text style={[bannerBody, { color: "#92400e" }]}>
                                     ₹{Number(subscription.pending_qr.amount).toLocaleString("en-IN")} for{" "}
                                     {subscription.pending_qr.valid_from} – {subscription.pending_qr.valid_until}
                                 </Text>
-                                <Text className="text-amber-500 text-xs mt-1">
-                                    Submitted on {subscription.pending_qr.submitted_at
+                                <Text style={{ color: "#b45309", fontSize: 11, marginTop: 4 }}>
+                                    Submitted {subscription.pending_qr.submitted_at
                                         ? new Date(subscription.pending_qr.submitted_at).toLocaleDateString("en-IN")
-                                        : "—"}. The admin will approve shortly.
+                                        : "recently"}  · Admin will approve shortly.
                                 </Text>
                             </View>
                         ) : null}
 
+<<<<<<< HEAD
                         {/* Select Seat button - shown when admin enabled self-selection */}
                         {subscription?.seat_selection_allowed ? (
+=======
+                        {/* Select seat CTA — only after admin offers seats */}
+                        {subscription?.plan && !subscription?.seat ? (
+>>>>>>> 4cc9e3a413a93b323c69f37ddb699a4d5d92e446
                             <TouchableOpacity
                                 onPress={() => router.push("/(student)/seat-select")}
-                                className="bg-emerald-600 rounded-xl p-5 mt-4 flex-row items-center justify-between"
+                                activeOpacity={0.87}
+                                style={{
+                                    backgroundColor: "#059669", borderRadius: 16,
+                                    paddingHorizontal: 20, paddingVertical: 18,
+                                    marginTop: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+                                    shadowColor: "#059669", shadowOpacity: 0.3, shadowRadius: 10, elevation: 4,
+                                }}
                             >
                                 <View>
-                                    <Text className="text-white font-bold text-lg">
-                                        Select Your Seat →
+                                    <Text style={{ color: "#fff", fontWeight: "800", fontSize: 17, letterSpacing: -0.2 }}>
+                                        Choose Your Seat
                                     </Text>
-                                    <Text className="text-emerald-100 text-sm mt-1">
-                                        Pick your spot in the library
+                                    <Text style={{ color: "rgba(255,255,255,0.75)", fontSize: 12, marginTop: 3 }}>
+                                        Admin has shared seat options for you
                                     </Text>
                                 </View>
-                                <Text className="text-white text-3xl">⊞</Text>
+                                <View style={{
+                                    width: 40, height: 40, borderRadius: 12,
+                                    backgroundColor: "rgba(255,255,255,0.2)",
+                                    alignItems: "center", justifyContent: "center",
+                                }}>
+                                    <Text style={{ color: "#fff", fontSize: 22 }}>⊞</Text>
+                                </View>
                             </TouchableOpacity>
                         ) : null}
 
-                        {/* No active plan warning */}
+                        {/* No active plan */}
                         {!subscription?.plan && !subscription?.pending_qr && !subscription?.scheduled_request ? (
-                            <View className="bg-rose-50 border border-rose-200 rounded-xl p-4 mt-4">
-                                <Text className="text-rose-700 font-bold text-sm mb-1">No Active Plan</Text>
-                                <Text className="text-rose-600 text-xs">
+                            <View style={[banner, { borderLeftColor: "#f43f5e", backgroundColor: "#fff1f2" }]}>
+                                <Text style={[bannerTitle, { color: "#be123c" }]}>No Active Plan</Text>
+                                <Text style={[bannerBody, { color: "#9f1239" }]}>
                                     You don't have an active plan. Make a payment to get started.
                                 </Text>
                             </View>
                         ) : null}
 
-                        {/* Payment successful banner — plan is active */}
+                        {/* Plan active */}
                         {subscription?.plan && subscription?.days_remaining > 0 ? (
-                            <View className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mt-4">
-                                <Text className="text-emerald-700 font-bold text-sm mb-1">
-                                    ✅ Plan Active
-                                </Text>
-                                <Text className="text-emerald-600 text-xs">
-                                    Your <Text className="font-semibold">{subscription.plan.name}</Text> plan is active.{" "}
+                            <View style={[banner, { borderLeftColor: "#059669", backgroundColor: "#f0fdf4" }]}>
+                                <Text style={[bannerTitle, { color: "#065f46" }]}>✅  Plan Active</Text>
+                                <Text style={[bannerBody, { color: "#047857" }]}>
+                                    Your <Text style={{ fontWeight: "700" }}>{subscription.plan.name}</Text> plan is active.{" "}
                                     {subscription.days_remaining} day{subscription.days_remaining !== 1 ? "s" : ""} remaining.
                                 </Text>
                             </View>
                         ) : null}
 
-                        {/* Show payment button only when:
-                            - not on hold
-                            - no pending QR awaiting approval
-                            - no active scheduled request from admin
-                            - no plan, or plan expired/expiring in 7 days */}
+                        {/* Make / Renew payment CTA */}
                         {subscription?.membership_status !== "on_hold" &&
                         !subscription?.pending_qr &&
                         !subscription?.scheduled_request &&
                         (!subscription?.plan || (subscription?.days_remaining !== null && subscription?.days_remaining <= 7)) ? (
                             <TouchableOpacity
                                 onPress={() => router.push("/(student)/pay")}
-                                className="bg-indigo-600 rounded-xl p-5 mt-4 flex-row items-center justify-between"
+                                activeOpacity={0.87}
+                                style={{
+                                    backgroundColor: INDIGO, borderRadius: 16,
+                                    paddingHorizontal: 20, paddingVertical: 18,
+                                    marginTop: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+                                    shadowColor: INDIGO, shadowOpacity: 0.3, shadowRadius: 10, elevation: 4,
+                                }}
                             >
                                 <View>
-                                    <Text className="text-white font-bold text-lg">
+                                    <Text style={{ color: "#fff", fontWeight: "800", fontSize: 17, letterSpacing: -0.2 }}>
                                         {subscription?.plan ? "Renew Plan" : "Make a Payment"}
                                     </Text>
-                                    <Text className="text-indigo-100 text-sm mt-1">
+                                    <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, marginTop: 3 }}>
                                         {subscription?.days_remaining !== null && subscription?.days_remaining <= 7 && subscription?.days_remaining > 0
                                             ? `Expires in ${subscription.days_remaining} days — renew now`
                                             : "Pay online or via UPI QR"}
                                     </Text>
                                 </View>
-                                <Text className="text-white text-3xl">→</Text>
+                                <View style={{
+                                    width: 40, height: 40, borderRadius: 12,
+                                    backgroundColor: "rgba(255,255,255,0.15)",
+                                    alignItems: "center", justifyContent: "center",
+                                }}>
+                                    <Text style={{ color: "#fff", fontSize: 22, fontWeight: "700" }}>→</Text>
+                                </View>
                             </TouchableOpacity>
                         ) : null}
 
-                        <View className="mt-6">
-                            <View className="flex-row justify-between items-center mb-3">
-                                <Text className="text-lg font-semibold text-gray-900">
+                        {/* ── Recent Payments ── */}
+                        <View style={{ marginTop: 28 }}>
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                                <Text style={{ fontSize: 17, fontWeight: "700", color: "#111827", letterSpacing: -0.2 }}>
                                     Recent Payments
                                 </Text>
                                 <TouchableOpacity onPress={() => router.push("/(student)/payments")}>
-                                    <Text className="text-indigo-600 text-sm font-semibold">View All →</Text>
+                                    <Text style={{ color: INDIGO, fontSize: 13, fontWeight: "600" }}>View All →</Text>
                                 </TouchableOpacity>
                             </View>
                             {payments.length === 0 ? (
-                                <View className="bg-white rounded-xl p-4 border border-gray-200">
-                                    <Text className="text-gray-500 text-sm text-center">
-                                        No payments yet
-                                    </Text>
+                                <View style={card}>
+                                    <Text style={{ color: "#9ca3af", fontSize: 14, textAlign: "center" }}>No payments yet</Text>
                                 </View>
                             ) : (
                                 payments.map((p) => <PaymentRow key={p.id} payment={p} />)
@@ -312,82 +323,114 @@ export default function StudentHomeScreen() {
     );
 }
 
+// ── Subscription card ─────────────────────────────────────────────────────────
 function SubscriptionCard({ subscription }) {
     if (!subscription) {
         return (
-            <View className="bg-white rounded-xl p-5 border border-gray-200">
-                <Text className="text-gray-500">No subscription data</Text>
+            <View style={card}>
+                <Text style={{ color: "#9ca3af" }}>No subscription data</Text>
             </View>
         );
     }
 
     const { plan, seat, renewal_date, days_remaining } = subscription;
-    const isExpiring = days_remaining !== null && days_remaining <= 7;
-    const isExpired = days_remaining !== null && days_remaining < 0;
+    const isExpiring = days_remaining !== null && days_remaining <= 7 && days_remaining >= 0;
+    const isExpired  = days_remaining !== null && days_remaining < 0;
+
+    const daysColor = isExpired ? "#ef4444" : isExpiring ? "#f59e0b" : "#111827";
 
     return (
-        <View className="bg-white rounded-xl p-5 border border-gray-200">
-            <Text className="text-xs uppercase tracking-wider text-gray-500">
-                Current Plan
-            </Text>
-            <Text className="text-2xl font-bold text-gray-900 mt-1">
-                {plan?.name ?? "No plan active"}
-            </Text>
-            {plan ? (
-                <Text className="text-gray-600 text-sm mt-1">
-                    ₹{Number(plan.price).toLocaleString()} / {plan.duration_days} days
+        <View style={[card, { padding: 0, overflow: "hidden" }]}>
+            {/* Indigo accent bar */}
+            <View style={{ height: 4, backgroundColor: INDIGO }} />
+            <View style={{ padding: 20 }}>
+                <Text style={{ fontSize: 10, fontWeight: "700", color: "#9ca3af", letterSpacing: 1.5, textTransform: "uppercase" }}>
+                    Current Plan
                 </Text>
-            ) : null}
+                <Text style={{ fontSize: 24, fontWeight: "800", color: "#111827", marginTop: 4, letterSpacing: -0.5 }}>
+                    {plan?.name ?? "No plan active"}
+                </Text>
+                {plan ? (
+                    <Text style={{ color: "#6b7280", fontSize: 13, marginTop: 2 }}>
+                        ₹{Number(plan.price).toLocaleString()} / {plan.duration_days} days
+                    </Text>
+                ) : null}
 
-            <View className="h-px bg-gray-200 my-4" />
+                <View style={{ height: 1, backgroundColor: "#f3f4f6", marginVertical: 16 }} />
 
-            <View className="flex-row justify-between">
-                <View>
-                    <Text className="text-xs text-gray-500">Renewal Date</Text>
-                    <Text className="text-gray-900 font-semibold">
-                        {renewal_date ?? "—"}
-                    </Text>
-                </View>
-                <View>
-                    <Text className="text-xs text-gray-500">Days Left</Text>
-                    <Text
-                        className={`font-semibold ${
-                            isExpired
-                                ? "text-red-600"
-                                : isExpiring
-                                ? "text-amber-600"
-                                : "text-gray-900"
-                        }`}
-                    >
-                        {days_remaining ?? "—"}
-                    </Text>
-                </View>
-                <View>
-                    <Text className="text-xs text-gray-500">Seat</Text>
-                    <Text className={`font-bold text-lg ${seat ? "text-emerald-600" : "text-gray-400"}`}>
-                        {seat?.seat_number ?? "—"}
-                    </Text>
+                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <View>
+                        <Text style={metaLabel}>Renewal Date</Text>
+                        <Text style={metaValue}>{renewal_date ?? "—"}</Text>
+                    </View>
+                    <View style={{ alignItems: "center" }}>
+                        <Text style={metaLabel}>Days Left</Text>
+                        <Text style={[metaValue, { color: daysColor }]}>{days_remaining ?? "—"}</Text>
+                    </View>
+                    <View style={{ alignItems: "flex-end" }}>
+                        <Text style={metaLabel}>My Seat</Text>
+                        <Text style={[metaValue, { fontSize: 22, color: seat ? "#059669" : "#d1d5db" }]}>
+                            {seat?.seat_number ?? "—"}
+                        </Text>
+                    </View>
                 </View>
             </View>
         </View>
     );
 }
 
+// ── Payment row ───────────────────────────────────────────────────────────────
 function PaymentRow({ payment }) {
+    const mode = payment.payment_mode?.toLowerCase() ?? "";
+    const modeIcon  = mode === "razorpay" ? "💳" : mode === "qr" || mode === "upi" ? "📱" : "💵";
+    const modeColor = mode === "razorpay" ? "#7c3aed" : mode === "qr" || mode === "upi" ? "#059669" : "#92400e";
+
     return (
-        <View className="bg-white rounded-xl p-4 border border-gray-200 mb-2 flex-row justify-between items-center">
-            <View>
-                <Text className="text-gray-900 font-semibold">
+        <View style={[card, { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }]}>
+            <View style={{ flex: 1 }}>
+                <Text style={{ color: "#111827", fontWeight: "700", fontSize: 14 }} numberOfLines={1}>
                     {payment.plan_name ?? "Payment"}
                 </Text>
-                <Text className="text-gray-500 text-xs mt-1">
-                    {payment.payment_mode?.toUpperCase()} •{" "}
-                    {payment.valid_from} → {payment.valid_until}
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, gap: 6 }}>
+                    <Text style={{ fontSize: 11, color: modeColor, fontWeight: "700" }}>{modeIcon} {payment.payment_mode?.toUpperCase()}</Text>
+                    <Text style={{ fontSize: 11, color: "#d1d5db" }}>·</Text>
+                    <Text style={{ fontSize: 11, color: "#9ca3af" }}>
+                        {payment.valid_from} → {payment.valid_until}
+                    </Text>
+                </View>
             </View>
-            <Text className="text-gray-900 font-bold">
+            <Text style={{ color: "#111827", fontWeight: "800", fontSize: 16, marginLeft: 8 }}>
                 ₹{Number(payment.amount_paid ?? payment.amount ?? 0).toLocaleString()}
             </Text>
         </View>
     );
 }
+
+// ── Shared styles ─────────────────────────────────────────────────────────────
+const card = {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 18,
+    marginTop: 14,
+    shadowColor: "#4f46e5",
+    shadowOpacity: 0.07,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+};
+
+const banner = {
+    borderRadius: 14,
+    padding: 16,
+    marginTop: 14,
+    borderLeftWidth: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+};
+
+const bannerTitle = { fontSize: 13, fontWeight: "700", marginBottom: 4 };
+const bannerBody  = { fontSize: 12, lineHeight: 18 };
+const metaLabel   = { fontSize: 11, color: "#9ca3af", fontWeight: "500", marginBottom: 3 };
+const metaValue   = { fontSize: 15, fontWeight: "700", color: "#111827" };

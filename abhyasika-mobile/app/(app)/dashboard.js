@@ -235,9 +235,13 @@ export default function Dashboard() {
   const [seatForm, setSeatForm] = useState({ seat_number: "" });
   const [assignForm, setAssignForm] = useState({ seatId: "", studentId: "" });
   const [planForm, setPlanForm] = useState({ name: "", price: "", duration_days: "30" });
+<<<<<<< HEAD
   const [requestForm, setRequestForm] = useState(EMPTY_REQUEST_FORM);
   const [requestBusy, setRequestBusy] = useState(false);
   const [cancelRequestId, setCancelRequestId] = useState("");
+=======
+  const [offerSeatsForm, setOfferSeatsForm] = useState({ studentId: "", studentName: "", seatIds: [] });
+>>>>>>> 4cc9e3a413a93b323c69f37ddb699a4d5d92e446
   const hasSeenPendingRequestsRef = useRef(false);
   const previousPendingRequestIdsRef = useRef(new Set());
   const contentWidth = Math.max(width - 40, 280);
@@ -770,6 +774,32 @@ export default function Dashboard() {
     save(() => api.assignSeat({ ...assignForm, audit }), "seats");
   };
 
+  const openOfferSeats = (student) => {
+    setOfferSeatsForm({ studentId: student.id, studentName: student.name, seatIds: [] });
+    setModal("offerSeats");
+  };
+
+  const toggleOfferedSeat = (seatId) => {
+    setOfferSeatsForm((prev) => ({
+      ...prev,
+      seatIds: prev.seatIds.includes(seatId)
+        ? prev.seatIds.filter((id) => id !== seatId)
+        : [...prev.seatIds, seatId],
+    }));
+  };
+
+  const submitOfferSeats = () => {
+    if (!offerSeatsForm.studentId) {
+      Alert.alert("Error", "No student selected.");
+      return;
+    }
+    if (offerSeatsForm.seatIds.length === 0) {
+      Alert.alert("Missing details", "Select at least one seat to send.");
+      return;
+    }
+    save(() => api.sendSeatsToStudent(offerSeatsForm.studentId, offerSeatsForm.seatIds));
+  };
+
   const releaseSeat = (seat) => {
     if (!canDo("seats", "edit")) {
       Alert.alert("Permission required", "You do not have permission to release seats.");
@@ -887,6 +917,7 @@ export default function Dashboard() {
             </View>
             <Text className={`self-start rounded-xl px-3 py-1.5 text-sm font-bold ${student.is_active ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"}`}>{student.is_active ? "ACTIVE" : "OFF"}</Text>
           </View>
+<<<<<<< HEAD
           {canDo("payments", "add") || canDo("students", "edit") ? (
             <View className="mt-4 flex-row gap-3">
               {canDo("payments", "add") ? (
@@ -897,6 +928,13 @@ export default function Dashboard() {
               ) : null}
             </View>
           ) : null}
+=======
+          <View className="mt-4 flex-row gap-3 flex-wrap">
+            <TouchableOpacity onPress={() => openPayment(student)} className="rounded-xl bg-indigo-600 px-4 py-2.5"><Text className="text-base font-semibold text-white">Payment</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => openOfferSeats(student)} className="rounded-xl bg-emerald-600 px-4 py-2.5"><Text className="text-base font-semibold text-white">Send Seats</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => save(() => api.toggleStudentActive(student.id, audit), "students")} className="rounded-xl border border-slate-200 px-4 py-2.5"><Text className="text-base font-semibold text-slate-700">Toggle</Text></TouchableOpacity>
+          </View>
+>>>>>>> 4cc9e3a413a93b323c69f37ddb699a4d5d92e446
         </Card>
       ))}
     </>
@@ -1567,6 +1605,38 @@ export default function Dashboard() {
         <ChipPicker label="Seat" items={availableSeats} value={assignForm.seatId} onChange={(seatId) => setAssignForm((p) => ({ ...p, seatId }))} getLabel={(seat) => seat.seat_number} getValue={(seat) => seat.id} />
         <ChipPicker label="Student" items={availableStudents} value={assignForm.studentId} onChange={(studentId) => setAssignForm((p) => ({ ...p, studentId }))} getLabel={(student) => student.name} getValue={(student) => student.id} />
         <TouchableOpacity disabled={busy} onPress={submitAssign} className="mt-3 rounded-xl bg-indigo-600 px-5 py-3.5"><Text className="text-center text-lg font-bold text-white">{busy ? "Saving..." : "Assign Seat"}</Text></TouchableOpacity>
+      </Sheet>
+
+      <Sheet title={`Send Seats to ${offerSeatsForm.studentName || "Student"}`} visible={modal === "offerSeats"} onClose={() => setModal("")}>
+        <Text className="mb-3 text-sm text-slate-500">
+          Select one or more available seats to send to this student. They will only see these options.
+        </Text>
+        {availableSeats.length === 0 ? (
+          <Text className="text-base text-slate-500 py-4 text-center">No available seats right now.</Text>
+        ) : (
+          <View className="flex-row flex-wrap gap-3 mb-4">
+            {availableSeats.map((seat) => {
+              const selected = offerSeatsForm.seatIds.includes(seat.id);
+              return (
+                <TouchableOpacity
+                  key={seat.id}
+                  onPress={() => toggleOfferedSeat(seat.id)}
+                  className={`rounded-xl border-2 px-5 py-3 ${selected ? "border-emerald-600 bg-emerald-600" : "border-slate-200 bg-white"}`}
+                >
+                  <Text className={`text-base font-bold ${selected ? "text-white" : "text-slate-700"}`}>{seat.seat_number}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+        {offerSeatsForm.seatIds.length > 0 ? (
+          <Text className="mb-3 text-sm text-emerald-700 font-semibold">
+            {offerSeatsForm.seatIds.length} seat(s) selected
+          </Text>
+        ) : null}
+        <TouchableOpacity disabled={busy || offerSeatsForm.seatIds.length === 0} onPress={submitOfferSeats} className={`mt-1 rounded-xl bg-emerald-600 px-5 py-3.5 ${(busy || offerSeatsForm.seatIds.length === 0) ? "opacity-50" : ""}`}>
+          <Text className="text-center text-lg font-bold text-white">{busy ? "Sending..." : "Send to Student"}</Text>
+        </TouchableOpacity>
       </Sheet>
 
       <Sheet title="New Fee Plan" visible={modal === "plan"} onClose={() => setModal("")}>

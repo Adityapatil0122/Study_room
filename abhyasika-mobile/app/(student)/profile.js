@@ -13,16 +13,17 @@ import { StatusBar } from "expo-status-bar";
 import { useAuth } from "../../context/AuthContext";
 import Toast from "react-native-toast-message";
 
+const INDIGO  = "#4f46e5";
 const EDITABLE = ["name", "email", "address", "city", "state", "pincode"];
 
 export default function ProfileScreen() {
-    const { api, logout } = useAuth();
+    const { api, logout, student } = useAuth();
     const [profile, setProfile] = useState(null);
-    const [form, setForm] = useState({});
+    const [form, setForm]       = useState({});
     const [editing, setEditing] = useState(false);
     const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState("");
+    const [saving, setSaving]   = useState(false);
+    const [error, setError]     = useState("");
 
     const load = useCallback(async () => {
         try {
@@ -30,9 +31,7 @@ export default function ProfileScreen() {
             const data = await api.getStudentProfile();
             setProfile(data);
             const initial = {};
-            EDITABLE.forEach((key) => {
-                initial[key] = data?.[key] ?? "";
-            });
+            EDITABLE.forEach((k) => { initial[k] = data?.[k] ?? ""; });
             setForm(initial);
         } catch (err) {
             setError(err?.message ?? "Failed to load profile");
@@ -41,12 +40,9 @@ export default function ProfileScreen() {
         }
     }, [api]);
 
-    useEffect(() => {
-        load();
-    }, [load]);
+    useEffect(() => { load(); }, [load]);
 
-    const set = (key) => (value) =>
-        setForm((prev) => ({ ...prev, [key]: value }));
+    const set = (key) => (value) => setForm((p) => ({ ...p, [key]: value }));
 
     const save = async () => {
         try {
@@ -54,201 +50,214 @@ export default function ProfileScreen() {
             const updated = await api.updateStudentProfile(form);
             setProfile(updated);
             setEditing(false);
-            Toast.show({
-                type: "success",
-                text1: "Profile updated ✓",
-                text2: "Your details have been saved.",
-                visibilityTime: 2500,
-            });
+            Toast.show({ type: "success", text1: "Profile updated ✓", text2: "Your details have been saved.", visibilityTime: 2500 });
         } catch (err) {
-            Toast.show({
-                type: "error",
-                text1: "Update failed",
-                text2: err?.message ?? "Could not save profile.",
-                visibilityTime: 3000,
-            });
+            Toast.show({ type: "error", text1: "Update failed", text2: err?.message ?? "Could not save profile.", visibilityTime: 3000 });
         } finally {
             setSaving(false);
         }
     };
 
+    const handleLogout = () =>
+        Alert.alert("Logout", "Are you sure you want to log out?", [
+            { text: "Cancel", style: "cancel" },
+            {
+                text: "Logout", style: "destructive", onPress: () => {
+                    Toast.show({ type: "info", text1: "Logged out", text2: "See you soon! 👋", visibilityTime: 2000 });
+                    logout();
+                },
+            },
+        ]);
+
     if (loading) {
         return (
-            <SafeAreaView className="flex-1 bg-gray-50 justify-center items-center">
-                <ActivityIndicator size="large" color="#4f46e5" />
+            <SafeAreaView style={{ flex: 1, backgroundColor: "#f4f5fb", justifyContent: "center", alignItems: "center" }}>
+                <ActivityIndicator size="large" color={INDIGO} />
             </SafeAreaView>
         );
     }
 
+    const initials = (profile?.name ?? student?.name ?? "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+
     return (
-        <SafeAreaView className="flex-1 bg-gray-50">
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#f4f5fb" }}>
             <StatusBar style="dark" />
-            <View className="px-4 pt-4 pb-2 bg-white border-b border-gray-200 flex-row justify-between items-center">
+
+            {/* Header */}
+            <View style={{
+                backgroundColor: "#fff",
+                paddingHorizontal: 20, paddingTop: 18, paddingBottom: 16,
+                borderBottomWidth: 1, borderBottomColor: "#f0f0f8",
+                flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+                shadowColor: INDIGO, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
+            }}>
                 <View>
-                    <Text className="text-2xl font-bold text-gray-900">My Profile</Text>
-                    <Text className="text-gray-500 text-sm">
-                        View and edit your details
-                    </Text>
+                    <Text style={{ fontSize: 22, fontWeight: "800", color: "#111827" }}>My Profile</Text>
+                    <Text style={{ color: "#9ca3af", fontSize: 12, marginTop: 2 }}>View and edit your details</Text>
                 </View>
-                {editing ? null : (
+                {!editing ? (
                     <TouchableOpacity
                         onPress={() => setEditing(true)}
-                        className="bg-indigo-600 px-4 py-2 rounded-lg"
+                        style={{
+                            backgroundColor: INDIGO, paddingHorizontal: 16, paddingVertical: 9,
+                            borderRadius: 10,
+                            shadowColor: INDIGO, shadowOpacity: 0.25, shadowRadius: 6, elevation: 2,
+                        }}
                     >
-                        <Text className="text-white font-semibold text-sm">Edit</Text>
+                        <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>Edit</Text>
                     </TouchableOpacity>
-                )}
+                ) : null}
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: 16 }}>
+            <ScrollView contentContainerStyle={{ padding: 20 }} showsVerticalScrollIndicator={false}>
                 {error ? (
-                    <View className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-                        <Text className="text-red-600 text-sm">{error}</Text>
+                    <View style={{
+                        backgroundColor: "#fff5f5", borderRadius: 12, borderLeftWidth: 4,
+                        borderLeftColor: "#ef4444", padding: 14, marginBottom: 16,
+                    }}>
+                        <Text style={{ color: "#ef4444", fontSize: 13 }}>{error}</Text>
                     </View>
                 ) : null}
 
-                <View className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-                    <Text className="text-xs uppercase tracking-wider text-gray-500 mb-3">
-                        Editable Information
+                {/* Avatar + name */}
+                <View style={{ alignItems: "center", marginBottom: 22 }}>
+                    <View style={{
+                        width: 72, height: 72, borderRadius: 36,
+                        backgroundColor: INDIGO, alignItems: "center", justifyContent: "center",
+                        shadowColor: INDIGO, shadowOpacity: 0.3, shadowRadius: 10, elevation: 4,
+                    }}>
+                        <Text style={{ color: "#fff", fontSize: 26, fontWeight: "800" }}>{initials}</Text>
+                    </View>
+                    <Text style={{ fontSize: 18, fontWeight: "700", color: "#111827", marginTop: 10 }}>
+                        {profile?.name ?? "—"}
                     </Text>
+                    <Text style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>{profile?.phone ?? ""}</Text>
+                </View>
 
-                    <EditableField
-                        label="Full Name"
-                        value={editing ? form.name : profile?.name}
-                        onChange={set("name")}
-                        editing={editing}
-                    />
-                    <EditableField
-                        label="Email"
-                        value={editing ? form.email : profile?.email}
-                        onChange={set("email")}
-                        editing={editing}
-                        keyboardType="email-address"
-                    />
-                    <EditableField
-                        label="Address"
-                        value={editing ? form.address : profile?.address}
-                        onChange={set("address")}
-                        editing={editing}
-                    />
-                    <View className="flex-row gap-3">
-                        <View className="flex-1">
-                            <EditableField
-                                label="City"
-                                value={editing ? form.city : profile?.city}
-                                onChange={set("city")}
-                                editing={editing}
-                            />
+                {/* Editable section */}
+                <SectionCard title="Editable Information">
+                    <EField label="Full Name"  value={editing ? form.name    : profile?.name}    onChange={set("name")}    editing={editing} />
+                    <EField label="Email"       value={editing ? form.email   : profile?.email}   onChange={set("email")}   editing={editing} keyboardType="email-address" />
+                    <EField label="Address"     value={editing ? form.address : profile?.address} onChange={set("address")} editing={editing} />
+                    <View style={{ flexDirection: "row", gap: 12 }}>
+                        <View style={{ flex: 1 }}>
+                            <EField label="City"  value={editing ? form.city  : profile?.city}  onChange={set("city")}  editing={editing} />
                         </View>
-                        <View className="flex-1">
-                            <EditableField
-                                label="State"
-                                value={editing ? form.state : profile?.state}
-                                onChange={set("state")}
-                                editing={editing}
-                            />
+                        <View style={{ flex: 1 }}>
+                            <EField label="State" value={editing ? form.state : profile?.state} onChange={set("state")} editing={editing} />
                         </View>
                     </View>
-                    <EditableField
-                        label="Pincode"
-                        value={editing ? form.pincode : profile?.pincode}
-                        onChange={set("pincode")}
-                        editing={editing}
-                        keyboardType="number-pad"
-                    />
-                </View>
+                    <EField label="Pincode" value={editing ? form.pincode : profile?.pincode} onChange={set("pincode")} editing={editing} keyboardType="number-pad" last />
+                </SectionCard>
 
-                <View className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-                    <Text className="text-xs uppercase tracking-wider text-gray-500 mb-3">
-                        Read-Only Information
-                    </Text>
-                    <ReadOnlyField label="Phone" value={profile?.phone} />
-                    <ReadOnlyField label="Gender" value={profile?.gender} />
-                    <ReadOnlyField label="Aadhaar" value={profile?.aadhaar} />
-                    <ReadOnlyField label="PAN" value={profile?.pan_card} />
-                    <ReadOnlyField label="Join Date" value={profile?.join_date} />
-                    <ReadOnlyField
-                        label="Preferred Shift"
-                        value={profile?.preferred_shift}
-                    />
-                </View>
+                {/* Read-only section */}
+                <SectionCard title="Account Information">
+                    <RField label="Phone"          value={profile?.phone} />
+                    <RField label="Gender"         value={profile?.gender} />
+                    <RField label="Aadhaar / PAN"  value={profile?.aadhaar || profile?.pan_card} />
+                    <RField label="Join Date"      value={profile?.join_date} last />
+                </SectionCard>
 
+                {/* Edit actions */}
                 {editing ? (
-                    <View className="flex-row gap-3 mb-4">
+                    <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
                         <TouchableOpacity
-                            onPress={() => {
-                                setEditing(false);
-                                load();
+                            onPress={() => { setEditing(false); load(); }}
+                            style={{
+                                flex: 1, borderWidth: 1.5, borderColor: "#e5e7eb",
+                                borderRadius: 12, paddingVertical: 14, alignItems: "center",
+                                backgroundColor: "#fff",
                             }}
-                            className="flex-1 border border-gray-300 rounded-lg py-3 items-center"
                         >
-                            <Text className="text-gray-700 font-semibold">Cancel</Text>
+                            <Text style={{ color: "#374151", fontWeight: "600", fontSize: 15 }}>Cancel</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             onPress={save}
                             disabled={saving}
-                            className={`flex-1 bg-indigo-600 rounded-lg py-3 items-center ${
-                                saving ? "opacity-70" : ""
-                            }`}
+                            style={{
+                                flex: 1, backgroundColor: INDIGO,
+                                borderRadius: 12, paddingVertical: 14, alignItems: "center",
+                                opacity: saving ? 0.7 : 1,
+                                shadowColor: INDIGO, shadowOpacity: 0.25, shadowRadius: 8, elevation: 3,
+                            }}
                         >
-                            <Text className="text-white font-semibold">
-                                {saving ? "Saving..." : "Save Changes"}
+                            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>
+                                {saving ? "Saving…" : "Save Changes"}
                             </Text>
                         </TouchableOpacity>
                     </View>
                 ) : (
                     <TouchableOpacity
-                        onPress={() => Alert.alert(
-                            "Logout",
-                            "Are you sure you want to log out?",
-                            [
-                                { text: "Cancel", style: "cancel" },
-                                {
-                                    text: "Logout", style: "destructive", onPress: () => {
-                                        Toast.show({
-                                            type: "info",
-                                            text1: "Logged out",
-                                            text2: "See you soon! 👋",
-                                            visibilityTime: 2000,
-                                        });
-                                        logout();
-                                    }
-                                },
-                            ]
-                        )}
-                        className="border border-red-300 rounded-lg py-3 items-center"
+                        onPress={handleLogout}
+                        style={{
+                            marginTop: 4, borderWidth: 1.5, borderColor: "#fecaca",
+                            borderRadius: 12, paddingVertical: 14, alignItems: "center",
+                            backgroundColor: "#fff5f5",
+                        }}
                     >
-                        <Text className="text-red-600 font-semibold">Logout</Text>
+                        <Text style={{ color: "#ef4444", fontWeight: "600", fontSize: 15 }}>Logout</Text>
                     </TouchableOpacity>
                 )}
+
+                <View style={{ height: 20 }} />
             </ScrollView>
         </SafeAreaView>
     );
 }
 
-function EditableField({ label, value, onChange, editing, keyboardType }) {
+// ── Section card ──────────────────────────────────────────────────────────────
+function SectionCard({ title, children }) {
     return (
-        <View className="mb-3">
-            <Text className="text-xs text-gray-500 mb-1">{label}</Text>
+        <View style={{
+            backgroundColor: "#fff", borderRadius: 16, padding: 18, marginBottom: 16,
+            shadowColor: "#4f46e5", shadowOpacity: 0.06, shadowRadius: 10,
+            shadowOffset: { width: 0, height: 3 }, elevation: 2,
+        }}>
+            <Text style={{
+                fontSize: 10, fontWeight: "700", color: "#a5b4fc",
+                letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 14,
+            }}>
+                {title}
+            </Text>
+            {children}
+        </View>
+    );
+}
+
+// ── Editable field ────────────────────────────────────────────────────────────
+function EField({ label, value, onChange, editing, keyboardType, last }) {
+    return (
+        <View style={{ marginBottom: last ? 0 : 14 }}>
+            <Text style={{ fontSize: 11, color: "#9ca3af", fontWeight: "600", marginBottom: 5 }}>{label}</Text>
             {editing ? (
                 <TextInput
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-gray-900 bg-gray-50"
                     value={value ?? ""}
                     onChangeText={onChange}
                     keyboardType={keyboardType ?? "default"}
+                    style={{
+                        borderWidth: 1.5, borderColor: "#e0e2f7",
+                        borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11,
+                        fontSize: 14, color: "#111827", backgroundColor: "#fafafa",
+                    }}
                 />
             ) : (
-                <Text className="text-gray-900 font-medium">{value || "—"}</Text>
+                <Text style={{ fontSize: 14, fontWeight: "600", color: "#111827" }}>{value || "—"}</Text>
             )}
         </View>
     );
 }
 
-function ReadOnlyField({ label, value }) {
+// ── Read-only field ───────────────────────────────────────────────────────────
+function RField({ label, value, last }) {
     return (
-        <View className="mb-3">
-            <Text className="text-xs text-gray-500 mb-1">{label}</Text>
-            <Text className="text-gray-900 font-medium">{value || "—"}</Text>
+        <View style={{
+            marginBottom: last ? 0 : 14,
+            paddingBottom: last ? 0 : 14,
+            borderBottomWidth: last ? 0 : 1,
+            borderBottomColor: "#f3f4f6",
+        }}>
+            <Text style={{ fontSize: 11, color: "#9ca3af", fontWeight: "600", marginBottom: 4 }}>{label}</Text>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: "#374151" }}>{value || "—"}</Text>
         </View>
     );
 }
