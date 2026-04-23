@@ -8,7 +8,6 @@ import React, {
   Suspense,
 } from "react";
 import Sidebar from "./components/layout/Sidebar.jsx";
-import MobileNav from "./components/layout/MobileNav.jsx";
 import LoadingState from "./components/common/LoadingState.jsx";
 import ErrorBanner from "./components/common/ErrorBanner.jsx";
 import StudentModal from "./components/modals/StudentModal.jsx";
@@ -118,6 +117,19 @@ function App() {
     [allowedViews]
   );
   const isWorkspaceUser = userType === "admin" || userType === "coordinator";
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const viewport = document.querySelector('meta[name="viewport"]');
+    if (!viewport) return;
+
+    viewport.setAttribute(
+      "content",
+      isAuthenticated && isWorkspaceUser
+        ? "width=1280, initial-scale=1"
+        : "width=device-width, initial-scale=1"
+    );
+  }, [isAuthenticated, isWorkspaceUser]);
   const ownerId = session?.user?.user_metadata?.owner_id ?? admin?.id;
   const rawRoleIds = session?.user?.user_metadata?.role_ids;
   const assignedRoleIds = useMemo(
@@ -1594,7 +1606,7 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900">
+    <div className="flex h-screen overflow-x-auto overflow-y-hidden bg-slate-50 text-slate-900">
         {/* Sidebar — desktop only, unchanged on mobile */}
         <Sidebar
           activeView={activeView}
@@ -1606,17 +1618,11 @@ function App() {
           sidebarOpen={sidebarOpen}
           onCloseSidebar={() => setSidebarOpen(false)}
         />
-        <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
+        <div className="flex min-w-[1120px] flex-1 flex-col overflow-hidden">
           {/* Mobile nav — unchanged */}
-          <MobileNav
-            activeView={activeView}
-            onNavigate={navigateTo}
-            branding={branding}
-            allowedViews={normalizedAllowedViews}
-          />
 
           {/* Desktop top bar — lg only */}
-          <header className="hidden lg:flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3 shadow-sm flex-shrink-0 gap-3">
+          <header className="flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3 shadow-sm flex-shrink-0 gap-3">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setSidebarOpen((o) => !o)}
@@ -1815,20 +1821,21 @@ function App() {
             </div>
           </header>
 
-          <main className="flex-1 overflow-y-auto px-4 py-5 sm:px-5 lg:px-6">
+          <main className="flex-1 overflow-auto px-6 py-5">
             {/* Stats cards — desktop only, dashboard view only */}
             {activeView === "dashboard" && (
-              <div className="hidden lg:grid mb-5 gap-3 grid-cols-2 xl:grid-cols-4">
+              <div className="mb-5 overflow-x-auto pb-1">
+                <div className="grid min-w-[880px] grid-cols-4 gap-3">
                 {headerHighlights.map((stat) => (
                   <div
                     key={stat.label}
                     className={`flex items-center justify-between rounded-xl border px-4 py-3 ${stat.bg} ${stat.border} transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm`}
                   >
                     <div className="min-w-0">
-                      <p className="text-[11px] uppercase tracking-wide text-slate-500 font-medium truncate">
+                      <p className="truncate text-[11px] font-medium uppercase tracking-wide text-slate-500">
                         {stat.label}
                       </p>
-                      <p className={`text-2xl font-bold truncate ${stat.valueColor}`}>
+                      <p className={`truncate text-2xl font-bold ${stat.valueColor}`}>
                         {stat.value}
                       </p>
                     </div>
@@ -1837,6 +1844,7 @@ function App() {
                     </div>
                   </div>
                 ))}
+                </div>
               </div>
             )}
             {renderContent()}

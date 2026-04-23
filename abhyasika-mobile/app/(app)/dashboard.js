@@ -235,13 +235,10 @@ export default function Dashboard() {
   const [seatForm, setSeatForm] = useState({ seat_number: "" });
   const [assignForm, setAssignForm] = useState({ seatId: "", studentId: "" });
   const [planForm, setPlanForm] = useState({ name: "", price: "", duration_days: "30" });
-<<<<<<< HEAD
   const [requestForm, setRequestForm] = useState(EMPTY_REQUEST_FORM);
   const [requestBusy, setRequestBusy] = useState(false);
   const [cancelRequestId, setCancelRequestId] = useState("");
-=======
   const [offerSeatsForm, setOfferSeatsForm] = useState({ studentId: "", studentName: "", seatIds: [] });
->>>>>>> 4cc9e3a413a93b323c69f37ddb699a4d5d92e446
   const hasSeenPendingRequestsRef = useRef(false);
   const previousPendingRequestIdsRef = useRef(new Set());
   const contentWidth = Math.max(width - 40, 280);
@@ -917,24 +914,11 @@ export default function Dashboard() {
             </View>
             <Text className={`self-start rounded-xl px-3 py-1.5 text-sm font-bold ${student.is_active ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"}`}>{student.is_active ? "ACTIVE" : "OFF"}</Text>
           </View>
-<<<<<<< HEAD
-          {canDo("payments", "add") || canDo("students", "edit") ? (
-            <View className="mt-4 flex-row gap-3">
-              {canDo("payments", "add") ? (
-                <TouchableOpacity onPress={() => openPayment(student)} className="rounded-xl bg-indigo-600 px-4 py-2.5"><Text className="text-base font-semibold text-white">Payment</Text></TouchableOpacity>
-              ) : null}
-              {canDo("students", "edit") ? (
-                <TouchableOpacity onPress={() => save(() => api.toggleStudentActive(student.id, audit), "students")} className="rounded-xl border border-slate-200 px-4 py-2.5"><Text className="text-base font-semibold text-slate-700">Toggle</Text></TouchableOpacity>
-              ) : null}
-            </View>
-          ) : null}
-=======
           <View className="mt-4 flex-row gap-3 flex-wrap">
             <TouchableOpacity onPress={() => openPayment(student)} className="rounded-xl bg-indigo-600 px-4 py-2.5"><Text className="text-base font-semibold text-white">Payment</Text></TouchableOpacity>
             <TouchableOpacity onPress={() => openOfferSeats(student)} className="rounded-xl bg-emerald-600 px-4 py-2.5"><Text className="text-base font-semibold text-white">Send Seats</Text></TouchableOpacity>
             <TouchableOpacity onPress={() => save(() => api.toggleStudentActive(student.id, audit), "students")} className="rounded-xl border border-slate-200 px-4 py-2.5"><Text className="text-base font-semibold text-slate-700">Toggle</Text></TouchableOpacity>
           </View>
->>>>>>> 4cc9e3a413a93b323c69f37ddb699a4d5d92e446
         </Card>
       ))}
     </>

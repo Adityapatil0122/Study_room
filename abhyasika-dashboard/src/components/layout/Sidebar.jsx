@@ -45,9 +45,8 @@ function Sidebar({
   return (
     <aside
       className={`
-        relative hidden flex-col bg-white border-r border-slate-100 flex-shrink-0
+        relative flex flex-col bg-white border-r border-slate-100 flex-shrink-0
         transition-all duration-300 ease-in-out
-        lg:flex
         ${collapsed ? "w-14" : "w-56"}
       `}
       style={{ height: "100vh", position: "sticky", top: 0 }}

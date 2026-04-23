@@ -207,13 +207,8 @@ export default function StudentHomeScreen() {
                             </View>
                         ) : null}
 
-<<<<<<< HEAD
-                        {/* Select Seat button - shown when admin enabled self-selection */}
-                        {subscription?.seat_selection_allowed ? (
-=======
                         {/* Select seat CTA — only after admin offers seats */}
                         {subscription?.plan && !subscription?.seat ? (
->>>>>>> 4cc9e3a413a93b323c69f37ddb699a4d5d92e446
                             <TouchableOpacity
                                 onPress={() => router.push("/(student)/seat-select")}
                                 activeOpacity={0.87}

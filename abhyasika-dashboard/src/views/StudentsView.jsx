@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import ThemeSelect from "../components/common/ThemeSelect.jsx";
 import LucideIcon from "../components/icons/LucideIcon.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -30,7 +30,6 @@ function StudentsView({
   const [query, setQuery] = useState("");
   const [planFilter, setPlanFilter] = useState("all");
   const [openMenuId, setOpenMenuId] = useState(null);
-  const [isCompact, setIsCompact] = useState(false);
   const canCreateStudent = hasPermission("students", "add");
   const canEditStudent = hasPermission("students", "edit");
   const canToggleStatus = hasPermission("students", "delete");
@@ -77,17 +76,6 @@ function StudentsView({
       return student.is_active && matchQuery && matchPlan;
     });
   }, [students, query, planFilter]);
-
-  useEffect(() => {
-    const updateCompact = () => {
-      if (typeof window !== "undefined") {
-        setIsCompact(window.innerWidth < 1024);
-      }
-    };
-    updateCompact();
-    window.addEventListener("resize", updateCompact);
-    return () => window.removeEventListener("resize", updateCompact);
-  }, []);
 
   const renderActions = useCallback(
     (student, busy) => {
@@ -257,74 +245,6 @@ function StudentsView({
     [busyIds, planMap, renderActions, seatMap]
   );
 
-  const renderMobileCard = useCallback(
-    (student, index) => {
-      const seat = seatMap.get(student.current_seat_id);
-      const plan = planMap.get(student.current_plan_id);
-      const busy = busyIds.includes(student.id);
-
-      return (
-        <div
-          key={`card-${student.id}`}
-          className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm dark:border-gray-800"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-slate-400">
-                #{index + 1}
-              </p>
-              <p className="text-base font-semibold text-slate-900">
-                {student.name}
-              </p>
-              <p className="text-xs text-slate-500">{student.email || "No email"}</p>
-              <p className="text-xs text-slate-500">{student.phone || "-"}</p>
-            </div>
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                student.membership_status === "on_hold"
-                  ? "bg-amber-50 text-amber-600"
-                  : "bg-emerald-50 text-emerald-600"
-              }`}
-            >
-              {student.membership_status === "on_hold" ? "On Hold" : "Active"}
-            </span>
-          </div>
-          <div className="mt-3 grid gap-2 text-xs text-slate-600">
-            <div className="flex items-center justify-between rounded-xl border border-slate-100 px-3 py-2 dark:border-gray-800">
-              <span className="font-semibold text-slate-900">Plan</span>
-              <span className="text-right">
-                {plan ? plan.name : "Not set"}
-                <span className="block text-[11px] text-slate-400">
-                  {student.fee_cycle === "rolling"
-                    ? "Rolling 30 days"
-                    : student.fee_plan_type === "limited"
-                    ? `${student.limited_days || plan?.duration_days || 0} days`
-                    : "Calendar month"}
-                </span>
-              </span>
-            </div>
-            <div className="flex items-center justify-between rounded-xl border border-slate-100 px-3 py-2 dark:border-gray-800">
-              <span className="font-semibold text-slate-900">Seat</span>
-              <span className="text-right">
-                {seat ? seat.seat_number : "Unassigned"}
-                <span className="block text-[11px] text-slate-400">
-                  Joined{" "}
-                  {student.join_date
-                    ? new Date(student.join_date).toLocaleDateString()
-                    : "-"}
-                </span>
-              </span>
-            </div>
-          </div>
-          <div className="relative mt-3 flex items-center justify-end">
-            {renderActions(student, busy)}
-          </div>
-        </div>
-      );
-    },
-    [busyIds, planMap, renderActions, seatMap]
-  );
-
   return (
     <div className="w-full space-y-5">
       <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -460,54 +380,40 @@ function StudentsView({
               {filtered.length} active
             </span>
           </div>
-          {isCompact ? (
-            filtered.length === 0 ? (
-              <p className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-                No active students match the current filters.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {filtered.map((student, index) =>
-                  renderMobileCard(student, index)
-                )}
-              </div>
-            )
-          ) : (
-            <div
-              className="overflow-x-auto"
-              style={{ scrollbarWidth: "thin" }}
-            >
-              <table className="min-w-full table-auto divide-y divide-slate-100 text-sm">
-                <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <div
+            className="overflow-x-auto"
+            style={{ scrollbarWidth: "thin" }}
+          >
+            <table className="min-w-full table-auto divide-y divide-slate-100 text-sm">
+              <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-left">#</th>
+                  <th className="px-4 py-3 text-left">Student</th>
+                  <th className="px-4 py-3 text-left">Contact</th>
+                  <th className="px-4 py-3 text-left">Plan</th>
+                  <th className="px-4 py-3 text-left">Seat</th>
+                  <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.length === 0 ? (
                   <tr>
-                    <th className="px-4 py-3 text-left">#</th>
-                    <th className="px-4 py-3 text-left">Student</th>
-                    <th className="px-4 py-3 text-left">Contact</th>
-                    <th className="px-4 py-3 text-left">Plan</th>
-                    <th className="px-4 py-3 text-left">Seat</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    <td
+                      colSpan={7}
+                      className="px-4 py-6 text-center text-sm text-slate-500"
+                    >
+                      No active students match the current filters.
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filtered.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={7}
-                        className="px-4 py-6 text-center text-sm text-slate-500"
-                      >
-                        No active students match the current filters.
-                      </td>
-                    </tr>
-                  ) : (
-                    filtered.map((student, index) =>
-                      renderDesktopRow(student, index)
-                    )
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
+                ) : (
+                  filtered.map((student, index) =>
+                    renderDesktopRow(student, index)
+                  )
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
       </div>
     </div>
