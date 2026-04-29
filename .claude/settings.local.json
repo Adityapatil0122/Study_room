@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"C:\\\\Study Room\\\\abhyasika-mobile\" diff --stat HEAD)",
+      "Bash(npx expo *)"
+    ]
+  }
+}

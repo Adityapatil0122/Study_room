@@ -17,6 +17,7 @@ const EMPTY_FORM = {
   valid_from: "",
   valid_until: "",
   notes: "",
+  deposit_enabled: false,
   deposit_amount: "",
   discount_enabled: false,
   discount_amount: "",
@@ -72,6 +73,18 @@ function SendPaymentRequestView({
         }
       }
 
+      if (name === "deposit_enabled" && !checked) {
+        updated.deposit_amount = "";
+      }
+
+      if (name === "late_fee_enabled" && !checked) {
+        updated.late_fee_amount = "";
+      }
+
+      if (name === "discount_enabled" && !checked) {
+        updated.discount_amount = "";
+      }
+
       if (name === "type") {
         const plan = plans.find((item) => item.id === updated.plan_id);
         const planPrice = plan ? Number(plan.price) || 0 : "";
@@ -120,7 +133,9 @@ function SendPaymentRequestView({
         valid_from: form.valid_from,
         valid_until: form.valid_until,
         notes: form.notes || null,
-        deposit_amount: Number(form.deposit_amount) || 0,
+        deposit_amount: form.deposit_enabled
+          ? Number(form.deposit_amount) || 0
+          : 0,
         discount_enabled: canDiscount ? form.discount_enabled : false,
         discount_amount:
           canDiscount && form.discount_enabled
@@ -155,7 +170,7 @@ function SendPaymentRequestView({
   const availableSeats = seats.filter((seat) => seat.status === "available");
   const canDiscount = isDiscountEligiblePlan(selectedPlan);
   const planAmount = Number(form.amount) || 0;
-  const deposit = Number(form.deposit_amount) || 0;
+  const deposit = form.deposit_enabled ? Number(form.deposit_amount) || 0 : 0;
   const discount =
     canDiscount && form.discount_enabled ? Number(form.discount_amount) || 0 : 0;
   const lateFee = form.late_fee_enabled
@@ -392,15 +407,16 @@ function SendPaymentRequestView({
               <span className="text-[11px] text-slate-400">- deposit, late fee, discount</span>
             </div>
             <div className="grid gap-3 lg:grid-cols-3">
-              <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
-                <label className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <div className={`rounded-lg border p-3 transition ${form.deposit_enabled ? "border-emerald-200 bg-emerald-50/50" : "border-slate-200 bg-slate-50/50"}`}>
+                <label className="mb-1 flex cursor-pointer items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  <input type="checkbox" name="deposit_enabled" checked={form.deposit_enabled} onChange={handleChange} className="h-3 w-3 accent-emerald-600" />
                   <LucideIcon name="PiggyBank" className="h-3 w-3 text-emerald-600" />
                   Deposit (Rs)
                   <span className="ml-auto text-[10px] font-normal normal-case text-slate-400">optional</span>
                 </label>
                 <div className="relative">
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">Rs</span>
-                  <input type="number" name="deposit_amount" value={form.deposit_amount} onChange={handleChange} placeholder="0" min="0" className={`${inputBase} pl-8`} />
+                  <input type="number" name="deposit_amount" value={form.deposit_amount} onChange={handleChange} placeholder="0" min="0" disabled={!form.deposit_enabled} className={`${inputBase} pl-8 disabled:bg-slate-100 disabled:opacity-60`} />
                 </div>
               </div>
 

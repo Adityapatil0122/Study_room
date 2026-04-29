@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import LucideIcon from "../components/icons/LucideIcon.jsx";
 import LoadingState from "../components/common/LoadingState.jsx";
+import { showAppToast, showLoginToast } from "../lib/toast.js";
 
 const SHIFTS = ["Morning", "Afternoon", "Evening", "Day"];
 const GENDERS = ["Male", "Female", "Other"];
@@ -70,7 +71,8 @@ function LoginView() {
     }
 
     try {
-      await unifiedLogin(loginForm.email.trim(), loginForm.password);
+      const result = await unifiedLogin(loginForm.email.trim(), loginForm.password);
+      showLoginToast(result?.userType ?? "user");
     } catch (loginError) {
       setLocalError(loginError.message);
     }
@@ -141,6 +143,7 @@ function LoginView() {
         aadhaar_file_type: aadhaarData?.mimeType ?? null,
         registration_source: "student_app",
       });
+      showAppToast("Account created successfully. You are now signed in.", "success");
     } catch (registerError) {
       setLocalError(registerError.message);
     }
@@ -156,21 +159,27 @@ function LoginView() {
     <div className="min-h-screen overflow-y-auto bg-white px-4 py-8 text-slate-900 sm:px-6 lg:px-8">
       <div
         className={`mx-auto flex min-h-[calc(100vh-4rem)] w-full items-center justify-center ${
-          mode === "login" ? "max-w-md" : "max-w-2xl"
+          mode === "login" ? "max-w-[23rem]" : "max-w-2xl"
         }`}
       >
-        <section className="w-full">
+        <section
+          className={`w-full ${
+            mode === "login"
+              ? "mx-auto max-w-[23rem] rounded-[2rem] border border-slate-200 bg-white px-5 py-8 shadow-xl shadow-slate-200/60 sm:px-6"
+              : ""
+          }`}
+        >
           {mode === "login" ? (
             <div className="mb-8 flex flex-col items-center text-center">
               <img
                 src="/images/logo.png"
                 alt="Aardhya Abhyasika"
-                className="h-24 w-24 object-contain"
+                className="h-20 w-20 object-contain"
               />
-              <h1 className="mt-5 text-2xl font-semibold leading-tight text-slate-900">
+              <h1 className="mt-4 text-[1.75rem] font-semibold leading-tight text-slate-900">
                 Welcome to Aardhya Abhyasika
               </h1>
-              <p className="mt-2 text-sm text-slate-500">
+              <p className="mt-2 max-w-[17rem] text-sm text-slate-500">
                 Admin, coordinator, and student sign in
               </p>
             </div>

@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "react-toastify";
 import { useAuth } from "../context/AuthContext.jsx";
 import LoadingState from "../components/common/LoadingState.jsx";
+import LogoutConfirmModal from "../components/common/LogoutConfirmModal.jsx";
 import LucideIcon from "../components/icons/LucideIcon.jsx";
+import { showAppToast, showLogoutToast } from "../lib/toast.js";
 
 const EDITABLE_PROFILE_FIELDS = ["name", "email", "address", "city", "state", "pincode"];
 
@@ -66,6 +67,7 @@ function StudentPortalView() {
   const [requestingQr, setRequestingQr] = useState(false);
   const [processingRazorpay, setProcessingRazorpay] = useState(false);
   const [selectingSeatId, setSelectingSeatId] = useState(null);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [error, setError] = useState("");
 
   const loadPortal = useCallback(async () => {
@@ -106,10 +108,13 @@ function StudentPortalView() {
   };
 
   const handleLogout = () => {
-    if (window.confirm("Are you sure you want to log out?")) {
-      toast.info("Logged out successfully.");
-      logout();
-    }
+    setLogoutConfirmOpen(true);
+  };
+
+  const handleLogoutConfirmed = () => {
+    setLogoutConfirmOpen(false);
+    showLogoutToast("student");
+    logout();
   };
 
   const handleProfileChange = (event) => {
@@ -123,9 +128,9 @@ function StudentPortalView() {
       const updated = await api.updateStudentProfile(profileForm);
       setProfile(updated);
       setEditingProfile(false);
-      toast.success("Profile updated.");
+      showAppToast("Profile updated.", "success");
     } catch (err) {
-      toast.error(err?.message ?? "Could not update profile.");
+      showAppToast(err?.message ?? "Could not update profile.", "error");
     } finally {
       setSavingProfile(false);
     }
@@ -133,7 +138,7 @@ function StudentPortalView() {
 
   const requestQrApproval = async () => {
     if (!scheduledRequest) {
-      toast.info("Payment details are not available yet.");
+      showAppToast("Payment details are not available yet.", "info");
       return;
     }
 
@@ -144,14 +149,18 @@ function StudentPortalView() {
         is_renewal: Boolean(profile?.renewal_date),
         scheduled_request_id: scheduledRequest.id,
       });
-      toast.success(
+      showAppToast(
         result?.already_pending
           ? "Your request is already pending."
-          : "Admin has been notified."
+          : "Admin has been notified.",
+        "success"
       );
       await loadPortal();
     } catch (err) {
-      toast.error(err?.message ?? "Could not send QR approval request.");
+      showAppToast(
+        err?.message ?? "Could not send QR approval request.",
+        "error"
+      );
     } finally {
       setRequestingQr(false);
     }
@@ -159,7 +168,7 @@ function StudentPortalView() {
 
   const payWithRazorpay = async () => {
     if (!scheduledRequest) {
-      toast.info("Payment details are not available yet.");
+      showAppToast("Payment details are not available yet.", "info");
       return;
     }
 
@@ -205,11 +214,11 @@ function StudentPortalView() {
               razorpay_signature: result.razorpay_signature,
               scheduled_request_id: scheduledRequest.id,
             });
-            toast.success(`${formatAmount(total)} paid successfully.`);
+            showAppToast(`${formatAmount(total)} paid successfully.`, "success");
             await loadPortal();
             setActiveTab("home");
           } catch (err) {
-            toast.error(err?.message ?? "Payment verification failed.");
+            showAppToast(err?.message ?? "Payment verification failed.", "error");
           } finally {
             setProcessingRazorpay(false);
           }
@@ -221,7 +230,7 @@ function StudentPortalView() {
 
       checkout.open();
     } catch (err) {
-      toast.error(err?.message ?? "Could not start Razorpay checkout.");
+      showAppToast(err?.message ?? "Could not start Razorpay checkout.", "error");
       setProcessingRazorpay(false);
     }
   };
@@ -240,7 +249,7 @@ function StudentPortalView() {
         )
       );
     } catch (err) {
-      toast.error(err?.message ?? "Could not load seats.");
+      showAppToast(err?.message ?? "Could not load seats.", "error");
     }
   };
 
@@ -249,12 +258,12 @@ function StudentPortalView() {
     setSelectingSeatId(seat.id);
     try {
       await api.selectSeat(seat.id);
-      toast.success(`Seat ${seat.seat_number} assigned.`);
+      showAppToast(`Seat ${seat.seat_number} assigned.`, "success");
       setShowSeats(false);
       setSeats([]);
       await loadPortal();
     } catch (err) {
-      toast.error(err?.message ?? "Could not select seat.");
+      showAppToast(err?.message ?? "Could not select seat.", "error");
     } finally {
       setSelectingSeatId(null);
     }
@@ -381,6 +390,12 @@ function StudentPortalView() {
           onSelect={selectSeat}
         />
       ) : null}
+      <LogoutConfirmModal
+        open={logoutConfirmOpen}
+        role="user"
+        onCancel={() => setLogoutConfirmOpen(false)}
+        onConfirm={handleLogoutConfirmed}
+      />
     </div>
   );
 }

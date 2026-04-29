@@ -5,6 +5,7 @@ import PlanModal from "../components/modals/PlanModal.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { createApiClient } from "../lib/apiClient.js";
 import LoadingState from "../components/common/LoadingState.jsx";
+import { showAppToast } from "../lib/toast.js";
 import {
   VIEW_DEFINITIONS,
   VIEW_ACTIONS,
@@ -325,10 +326,14 @@ function SettingsView({
         throw new Error("No active session found.");
       }
       await api.updateSettings(profile);
-      setSavedBanner("Settings saved! Changes will sync to your account.");
+      const message = "Settings saved! Changes will sync to your account.";
+      setSavedBanner(message);
+      showAppToast(message, "success");
       setTimeout(() => setSavedBanner(""), 3200);
     } catch (err) {
-      setError(err.message || "Failed to save settings.");
+      const message = err.message || "Failed to save settings.";
+      setError(message);
+      showAppToast(message, "error");
     } finally {
       setSaving(false);
     }
@@ -362,10 +367,14 @@ function SettingsView({
       setProfile(updatedProfile);
       onLogoUploaded({ url: selectedUrl, path });
       await api.updateSettings(updatedProfile);
-      setSavedBanner("Logo updated for your workspace.");
+      const message = "Logo updated for your workspace.";
+      setSavedBanner(message);
+      showAppToast(message, "success");
       setTimeout(() => setSavedBanner(""), 3200);
     } catch (err) {
-      setLogoUploadError(err.message || "Unable to upload logo.");
+      const message = err.message || "Unable to upload logo.";
+      setLogoUploadError(message);
+      showAppToast(message, "error");
     } finally {
       setLogoUploading(false);
       event.target.value = "";
@@ -516,10 +525,14 @@ function SettingsView({
         [...prev, normalizedRole].sort((a, b) => a.name.localeCompare(b.name))
       );
       setRoleForm(createRoleForm());
-      setSavedBanner("Role created with custom permissions.");
+      const message = "Role created with custom permissions.";
+      setSavedBanner(message);
+      showAppToast(message, "success");
       setTimeout(() => setSavedBanner(""), 3200);
     } catch (err) {
-      setRoleError(err.message || "Unable to add role.");
+      const message = err.message || "Unable to add role.";
+      setRoleError(message);
+      showAppToast(message, "error");
     } finally {
       setRoleSaving(false);
     }
@@ -530,8 +543,11 @@ function SettingsView({
     try {
       await api.deleteRole(roleId);
       setRoles((prev) => prev.filter((role) => role.id !== roleId));
+      showAppToast("Role removed.", "success");
     } catch (err) {
-      setRoleError(err.message || "Unable to delete role.");
+      const message = err.message || "Unable to delete role.";
+      setRoleError(message);
+      showAppToast(message, "error");
     }
   };
 
@@ -616,9 +632,19 @@ function SettingsView({
         roleName:
           prev.accountType === "coordinator" ? coordinatorRole?.name || "Coordinator" : "",
       }));
+      showAppToast(
+        teamForm.mode === "manual"
+          ? teamForm.accountType === "coordinator"
+            ? "Coordinator login created."
+            : "Team login created."
+          : "Temporary access created.",
+        "success"
+      );
       setTimeout(() => setTeamMessage(""), 4000);
     } catch (err) {
-      setTeamError(err.message || "Unable to add teammate.");
+      const message = err.message || "Unable to add teammate.";
+      setTeamError(message);
+      showAppToast(message, "error");
     } finally {
       setTeamSaving(false);
     }

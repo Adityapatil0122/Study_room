@@ -10,6 +10,7 @@ import React, {
 import Sidebar from "./components/layout/Sidebar.jsx";
 import LoadingState from "./components/common/LoadingState.jsx";
 import ErrorBanner from "./components/common/ErrorBanner.jsx";
+import LogoutConfirmModal from "./components/common/LogoutConfirmModal.jsx";
 import StudentModal from "./components/modals/StudentModal.jsx";
 import PaymentModal from "./components/modals/PaymentModal.jsx";
 import AssignSeatModal from "./components/modals/AssignSeatModal.jsx";
@@ -22,8 +23,13 @@ import LoginView from "./views/LoginView.jsx";
 import StudentPortalView from "./views/StudentPortalView.jsx";
 import { createApiClient } from "./lib/apiClient.js";
 import { ALL_VIEW_IDS } from "./constants/views.js";
-import { ToastContainer, toast } from "react-toastify";
+import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import {
+  APP_TOAST_CONTAINER_PROPS,
+  showAppToast,
+  showLogoutToast,
+} from "./lib/toast.js";
 
 const DashboardView = lazy(() => import("./views/DashboardView.jsx"));
 const StudentsView = lazy(() => import("./views/StudentsView.jsx"));
@@ -101,7 +107,6 @@ function App() {
     payload: null,
   });
 
-  const theme = "light";
   const {
     session,
     userType,
@@ -139,16 +144,18 @@ function App() {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState("all");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   const confirmLogout = () => {
-    if (window.confirm("Are you sure you want to log out?")) {
-      toast.info("Logged out successfully. See you soon! 👋", {
-        position: "top-right",
-        autoClose: 1800,
-      });
-      setTimeout(() => logout(), 400);
-    }
+    setLogoutConfirmOpen(true);
   };
+
+  const handleLogoutConfirmed = () => {
+    setLogoutConfirmOpen(false);
+    showLogoutToast(userType === "coordinator" ? "coordinator" : "admin");
+    setTimeout(() => logout(), 400);
+  };
+
   const notificationRef = useRef(null);
   const hasSeenPendingNotificationsRef = useRef(false);
   const previousPendingNotificationIdsRef = useRef(new Set());
@@ -726,25 +733,9 @@ function App() {
 
   const showToast = useCallback(
     (message, tone = "success") => {
-      const options = {
-        position: "top-right",
-        theme: theme === "dark" ? "dark" : "light",
-      };
-      switch (tone) {
-        case "error":
-          toast.error(message, options);
-          break;
-        case "warning":
-          toast.warn(message, options);
-          break;
-        case "info":
-          toast.info(message, options);
-          break;
-        default:
-          toast.success(message, options);
-      }
+      showAppToast(message, tone);
     },
-    [theme]
+    []
   );
 
   useEffect(() => {
@@ -772,15 +763,7 @@ function App() {
   }, [pendingPayments, showToast]);
 
   const toastContainer = (
-    <ToastContainer
-      position="top-right"
-      autoClose={3200}
-      newestOnTop
-      closeOnClick
-      pauseOnHover
-      draggable
-      theme={theme === "dark" ? "dark" : "light"}
-    />
+    <ToastContainer {...APP_TOAST_CONTAINER_PROPS} />
   );
 
   const navigateTo = useCallback(
@@ -1577,7 +1560,6 @@ function App() {
     );
   }
 
-
   if (authInitializing) {
     return (
       <>
@@ -1606,7 +1588,7 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen overflow-x-auto overflow-y-hidden bg-slate-50 text-slate-900">
+      <div className="flex h-screen overflow-x-auto overflow-y-hidden bg-slate-50 text-slate-900">
         {/* Sidebar — desktop only, unchanged on mobile */}
         <Sidebar
           activeView={activeView}
@@ -1851,7 +1833,13 @@ function App() {
           </main>
         </div>
         {renderModal()}
-        {toastContainer}
+        <LogoutConfirmModal
+          open={logoutConfirmOpen}
+          role={userType === "coordinator" ? "coordinator" : "admin"}
+          onCancel={() => setLogoutConfirmOpen(false)}
+          onConfirm={handleLogoutConfirmed}
+        />
+      {toastContainer}
     </div>
   );
 }

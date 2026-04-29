@@ -387,7 +387,7 @@ function StudentsView({
             <table className="min-w-full table-auto divide-y divide-slate-100 text-sm">
               <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-4 py-3 text-left">#</th>
+                  <th className="px-4 py-3 text-left">No.</th>
                   <th className="px-4 py-3 text-left">Student</th>
                   <th className="px-4 py-3 text-left">Contact</th>
                   <th className="px-4 py-3 text-left">Plan</th>
